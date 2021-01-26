@@ -1,0 +1,21 @@
+[package]
+name = "smt2parser"
+version = "0.1.0"
+repository = "https://github.com/fairinternal/smt2analysis"
+authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["smt2", "ml"]
+categories = ["solver", "research"]
+edition = "2018"
+
+[dependencies]
+num = "0.3.1"
+pomelo = "0.1.4"
+structopt = "0.3.12"
+fst = "0.4.5"
+
+[[bin]]
+name = "smt2bin"
+path = "src/main.rs"
+test = false
