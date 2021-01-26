@@ -1,0 +1,26 @@
+[package]
+name = "smt2parser"
+version = "0.1.0"
+repository = "https://github.com/facebookincubator/smt2utils"
+documentation = "https://docs.rs/smt2parser"
+authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["smt", "solver", "smt-lib"]
+categories = ["science"]
+edition = "2018"
+exclude = [
+    # Readme template that doesn't need to be included.
+    "README.tpl",
+]
+
+[dependencies]
+num = "0.3.1"
+pomelo = "0.1.4"
+structopt = "0.3.12"
+fst = "0.4.5"
+
+[[bin]]
+name = "smt2bin"
+path = "src/main.rs"
+test = false
