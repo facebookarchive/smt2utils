@@ -1,6 +1,7 @@
 [package]
 name = "smt2proxy"
 version = "0.1.0"
+description = "Binary tool to intercept and pre-process SMT2 commands"
 repository = "https://github.com/facebookincubator/smt2utils"
 documentation = "https://docs.rs/smt2proxy"
 authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]
