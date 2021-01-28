@@ -1,4 +1,4 @@
-# smt2utils: Libraries and tools for SMT2 solving
+# smt2utils: Libraries and tools for the SMT-LIB-2 standard
 
 [![Build Status](https://github.com/facebookincubator/smt2utils/workflows/Rust/badge.svg)](https://github.com/facebookincubator/smt2utils/actions?query=workflow%3ARust)
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](LICENSE-APACHE)
