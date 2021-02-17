@@ -1,0 +1,25 @@
+[package]
+name = "z3tracer"
+version = "0.1.0"
+description = "Generic parser for Z3 tracing logs"
+repository = "https://github.com/facebookincubator/smt2utils"
+documentation = "https://docs.rs/z3tracer"
+authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["smt", "solver", "z3"]
+categories = ["science"]
+edition = "2018"
+exclude = [
+    # Readme template that doesn't need to be included.
+    "README.tpl",
+]
+
+[dependencies]
+structopt = "0.3.12"
+smt2parser = { path = "../smt2parser", version = "0.1.0" }
+
+[[bin]]
+name = "z3tracer"
+path = "src/main.rs"
+test = false

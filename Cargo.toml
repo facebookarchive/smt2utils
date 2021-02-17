@@ -2,6 +2,7 @@
 members = [
     "smt2parser",
     "smt2proxy",
+    "z3tracer",
 ]
 
 [profile.release]
