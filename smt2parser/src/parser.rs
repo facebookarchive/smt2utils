@@ -447,7 +447,12 @@ mod tests {
             &b"(assert (forall ((x Bool) (y Int)) (f x y))\n ; dfg \n )"[..],
         ))
         .unwrap();
-        assert!(matches!(value, Command::Assert { term: Term::Forall { .. }}));
+        assert!(matches!(
+            value,
+            Command::Assert {
+                term: Term::Forall { .. }
+            }
+        ));
 
         let result = parse_tokens(Lexer::new(&b"(assert (forall () (f x y)))"[..]));
         assert!(result.is_err());
@@ -456,13 +461,28 @@ mod tests {
             &b"(assert ( ;foo\n match 3 ( (x (+ x 2)) ) ))"[..],
         ))
         .unwrap();
-        assert!(matches!(value, Command::Assert { term: Term::Match { .. } }));
+        assert!(matches!(
+            value,
+            Command::Assert {
+                term: Term::Match { .. }
+            }
+        ));
 
         let value = parse_tokens(Lexer::new(&b"(assert ( ! 3 :f 1 :g (a 3) ))"[..])).unwrap();
-        assert!(matches!(value, Command::Assert { term: Term::Attributes { .. }}));
+        assert!(matches!(
+            value,
+            Command::Assert {
+                term: Term::Attributes { .. }
+            }
+        ));
 
         let value = parse_tokens(Lexer::new(&b"(assert ( f 1 2 3 ))"[..])).unwrap();
-        assert!(matches!(value, Command::Assert { term:Term::Application { .. }}));
+        assert!(matches!(
+            value,
+            Command::Assert {
+                term: Term::Application { .. }
+            }
+        ));
     }
 
     #[test]
