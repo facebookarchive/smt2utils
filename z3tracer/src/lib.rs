@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! This crate provides a generic parser for Z3 tracing logs.
+//! This crate provides a parser for Z3 tracing logs.
 
 #![forbid(unsafe_code)]
 
@@ -9,7 +9,7 @@ pub mod error;
 pub mod events;
 pub mod parser;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use error::{Error, Result};
 use events::*;
@@ -18,9 +18,15 @@ use smt2parser::concrete::Symbol;
 
 #[derive(Default, Debug)]
 pub struct Model {
+    // Terms indexed by identifier.
     terms: BTreeMap<Ident, Term>,
+    // Quantifier instantiations indexed by (hexadecimal) key.
     instantiations: BTreeMap<u64, QuantInstantiation>,
+    // Equality reasoning indexed by target term identifier.
     equalities: BTreeMap<Ident, Equality>,
+    // Track if a term depends on "enodes" produced by quantifier instantiations.
+    qi_dependencies: BTreeMap<Ident, Vec<u64>>,
+    // Stack of current quantifier instances.
     current_instances: Vec<(u64, QuantInstantiationData)>,
 }
 
@@ -37,14 +43,14 @@ impl Model {
         &self.equalities
     }
 
-    fn log_instance(&self, inst: &QuantInstantiation) -> Result<()> {
+    fn log_instance(&self, inst: &QuantInstantiation, with_used_terms: bool) -> Result<()> {
         match &inst.kind {
             QuantInstantiationKind::Discovered { .. } => (),
             QuantInstantiationKind::NewMatch {
                 quantifier,
                 terms,
                 trigger,
-                ..
+                used,
             } => {
                 let quantifier = self.term(quantifier)?;
                 if let Term::Quant {
@@ -74,6 +80,24 @@ impl Model {
                             vn.name.clone(),
                             self.id_to_sexp(&global_venv, &terms[i])?
                         );
+                    }
+                    if with_used_terms {
+                        // Print 'used' terms.
+                        for u in used {
+                            use MatchedTerm::*;
+                            match u {
+                                RootPattern(id) => {
+                                    println!("  ! {}", self.id_to_sexp(&global_venv, id)?);
+                                }
+                                SubPattern(id1, id2) => {
+                                    println!(
+                                        "  !! {} == {}",
+                                        self.id_to_sexp(&global_venv, id1)?,
+                                        self.id_to_sexp(&global_venv, id2)?
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -204,8 +228,19 @@ impl Model {
     }
 
     fn set_term(&mut self, ident: Ident, term: Term) -> Result<()> {
-        term.visit(&mut |id| self.check_ident(id))?;
-        self.terms.insert(ident, term);
+        let mut qi_deps = BTreeSet::new();
+        term.visit(&mut |id| {
+            self.check_ident(id)?;
+            if let Some(deps) = self.qi_dependencies.get(id) {
+                for dep in deps {
+                    qi_deps.insert(*dep);
+                }
+            }
+            Ok(())
+        })?;
+        self.terms.insert(ident.clone(), term);
+        self.qi_dependencies
+            .insert(ident, qi_deps.into_iter().collect());
         Ok(())
     }
 
@@ -370,12 +405,15 @@ impl Model {
                     let id = line.read_ident()?;
                     let generation = line.read_integer()?;
                     line.check_end_of_line()?;
-                    let data = &mut self.current_instances.last_mut().unwrap().1;
+                    let current_instance = self.current_instances.last_mut().unwrap();
+                    let key = current_instance.0;
+                    let data = &mut current_instance.1;
                     if generation != data.generation {
                         println!("{:?}", self.current_instances);
                         return Err(Error::InvalidEnodeGeneration);
                     }
-                    data.enodes.push(id);
+                    data.enodes.push(id.clone());
+                    self.qi_dependencies.insert(id, vec![key]);
                 }
             }
             "[end-of-instance]" => {
@@ -400,6 +438,7 @@ impl Model {
                         self.instantiations
                             .get(&key)
                             .ok_or(Error::InvalidEndOfInstance)?,
+                        /* with_used_terms */ false,
                     )?;
                 }
             }

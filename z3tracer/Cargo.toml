@@ -1,7 +1,7 @@
 [package]
 name = "z3tracer"
 version = "0.1.0"
-description = "Generic parser for Z3 tracing logs"
+description = "Parser for Z3 tracing logs"
 repository = "https://github.com/facebookincubator/smt2utils"
 documentation = "https://docs.rs/z3tracer"
 authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]

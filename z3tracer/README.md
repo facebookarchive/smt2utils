@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](../LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](../LICENSE-MIT)
 
-This crate provides a generic parser for Z3 tracing logs.
+This crate provides a parser for Z3 tracing logs.
 
 ## Contributing
 
