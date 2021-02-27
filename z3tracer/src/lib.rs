@@ -5,19 +5,36 @@
 
 #![forbid(unsafe_code)]
 
+use smt2parser::concrete::Symbol;
+use std::collections::{BTreeMap, BTreeSet};
+use structopt::StructOpt;
+
 pub mod error;
 pub mod parser;
 pub mod syntax;
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use error::{Error, Result};
 use parser::LineParser;
-use smt2parser::concrete::Symbol;
 use syntax::{
     Equality, Ident, MatchedTerm, Meaning, QuantInstantiation, QuantInstantiationData,
     QuantInstantiationKind, Term, Visitor,
 };
+
+/// Configuration for the logging of quantifier instantiations.
+#[derive(Debug, Clone, StructOpt)]
+pub struct LogConfig {
+    /// Whether to display variable instantiations.
+    #[structopt(long)]
+    with_variables: bool,
+
+    /// Whether to display triggers.
+    #[structopt(long)]
+    with_triggers: bool,
+
+    /// Whether to display 'used terms'
+    #[structopt(long)]
+    with_used_terms: bool,
+}
 
 #[derive(Default, Debug)]
 pub struct Model {
@@ -34,19 +51,296 @@ pub struct Model {
 }
 
 impl Model {
+    /// All terms in the model.
     pub fn terms(&self) -> &BTreeMap<Ident, Term> {
         &self.terms
     }
 
+    /// All instantiations in the model.
     pub fn instantiations(&self) -> &BTreeMap<u64, QuantInstantiation> {
         &self.instantiations
     }
 
+    /// All equality steps in the model.
     pub fn equalities(&self) -> &BTreeMap<Ident, Equality> {
         &self.equalities
     }
 
-    fn log_instance(&self, inst: &QuantInstantiation, with_used_terms: bool) -> Result<()> {
+    /// Parse the given input line.
+    pub fn process_line(&mut self, bytes: &[u8]) -> Result<Option<QuantInstantiation>> {
+        let mut line = LineParser::new(bytes);
+        match line.read_string().unwrap().as_ref() {
+            "[mk-app]" => {
+                let id = line.read_ident()?;
+                let name = line.read_string()?;
+                let args = line.read_idents()?;
+                line.check_end_of_line()?;
+                let term = Term::App {
+                    name,
+                    args,
+                    meaning: None,
+                };
+                self.set_term(id, term)?;
+                Ok(None)
+            }
+            "[mk-var]" => {
+                let id = line.read_ident()?;
+                let index = line.read_integer()?;
+                line.check_end_of_line()?;
+                let term = Term::Var { index };
+                self.set_term(id, term)?;
+                Ok(None)
+            }
+            "[mk-quant]" => {
+                let id = line.read_ident()?;
+                let name = line.read_string()?;
+                let params = line.read_integer()? as usize;
+                let mut triggers = line.read_idents()?;
+                line.check_end_of_line()?;
+                let body = triggers.pop().ok_or(Error::MissingBody)?;
+                let term = Term::Quant {
+                    name,
+                    params,
+                    triggers,
+                    body,
+                    var_names: None,
+                };
+                self.set_term(id, term)?;
+                Ok(None)
+            }
+            "[mk-lambda]" => {
+                let id = line.read_ident()?;
+                let name = line.read_string()?;
+                let params = line.read_integer()?;
+                let mut triggers = line.read_idents()?;
+                line.check_end_of_line()?;
+                let body = triggers.pop().ok_or(Error::MissingBody)?;
+                let term = Term::Lambda {
+                    name,
+                    params,
+                    triggers,
+                    body, // NOTE: possibly a proof term
+                };
+                self.set_term(id, term)?;
+                Ok(None)
+            }
+            "[mk-proof]" => {
+                let id = line.read_ident()?;
+                let name = line.read_string()?;
+                let args = line.read_idents()?;
+                line.check_end_of_line()?;
+                let term = Term::Proof { name, args };
+                // NOTE: proof terms are often overridden by terms later.
+                self.set_term(id, term)?;
+                Ok(None)
+            }
+            "[attach-meaning]" => {
+                let id = line.read_ident()?;
+                let theory = line.read_string()?;
+                let sexp = line.read_content()?;
+                match self.term_mut(&id)? {
+                    Term::App { meaning, .. } => {
+                        *meaning = Some(Meaning { theory, sexp });
+                    }
+                    _ => {
+                        return Err(Error::CannotAttachMeaning(id));
+                    }
+                }
+                Ok(None)
+            }
+            "[attach-var-names]" => {
+                let id = line.read_ident()?;
+                let names = line.read_var_names()?;
+                line.check_end_of_line()?;
+                match self.term_mut(&id)? {
+                    Term::Quant {
+                        var_names, params, ..
+                    } if names.len() == *params => {
+                        *var_names = Some(names);
+                    }
+                    _ => {
+                        return Err(Error::CannotAttachVarNames(id));
+                    }
+                }
+                Ok(None)
+            }
+            "[inst-discovered]" => {
+                let method = line.read_string()?;
+                let key = line.read_key()?;
+                let quantifier = line.read_ident()?;
+                let terms = line.read_idents()?;
+                let blame = line.read_idents()?;
+                line.check_end_of_line()?;
+                let kind = QuantInstantiationKind::Discovered {
+                    method,
+                    quantifier,
+                    terms,
+                    blame,
+                };
+                let inst = QuantInstantiation { kind, data: None };
+                // Ignore solver instances.
+                if key != 0 {
+                    inst.visit(&mut |id| self.check_ident(id))?;
+                    self.instantiations.insert(key, inst);
+                }
+                Ok(None)
+            }
+            "[new-match]" => {
+                let key = line.read_key()?;
+                let quantifier = line.read_ident()?;
+                let trigger = line.read_ident()?;
+                let terms = line.read_idents()?;
+                let used = line.read_matched_terms()?;
+                line.check_end_of_line()?;
+                let kind = QuantInstantiationKind::NewMatch {
+                    quantifier,
+                    trigger,
+                    terms,
+                    used,
+                };
+                let inst = QuantInstantiation { kind, data: None };
+                // Ignore solver instances.
+                if key != 0 {
+                    inst.visit(&mut |id| self.check_ident(id))?;
+                    self.instantiations.insert(key, inst);
+                }
+                Ok(None)
+            }
+            "[eq-expl]" => {
+                let id = line.read_ident()?;
+                let eq = line.read_equality()?;
+                line.check_end_of_line()?;
+                eq.visit(&mut |id| self.check_ident(id))?;
+                self.equalities.insert(id, eq);
+                Ok(None)
+            }
+            "[instance]" => {
+                let key = line.read_key()?;
+                let term = line.read_ident()?;
+                let generation = line.read_optional_integer()?.unwrap_or_else(|| {
+                    // Defaults to the same "generation" number as the outer instantiation, if any.
+                    self.current_instances
+                        .last()
+                        .map(|(_, data)| data.generation)
+                        .unwrap_or(0)
+                });
+                line.check_end_of_line()?;
+                let data = QuantInstantiationData {
+                    generation,
+                    term,
+                    enodes: Vec::new(),
+                };
+                self.current_instances.push((key, data));
+                Ok(None)
+            }
+            "[attach-enode]" => {
+                // Ignore commands outside of [instance]..[end-of-instance].
+                if !self.current_instances.is_empty() {
+                    let id = line.read_ident()?;
+                    let generation = line.read_integer()?;
+                    line.check_end_of_line()?;
+                    let current_instance = self.current_instances.last_mut().unwrap();
+                    let key = current_instance.0;
+                    let data = &mut current_instance.1;
+                    if generation != data.generation {
+                        println!("{:?}", self.current_instances);
+                        return Err(Error::InvalidEnodeGeneration);
+                    }
+                    data.enodes.push(id.clone());
+                    self.qi_dependencies.insert(id, vec![key]);
+                }
+                Ok(None)
+            }
+            "[end-of-instance]" => {
+                line.check_end_of_line()?;
+                let (key, data) = self
+                    .current_instances
+                    .pop()
+                    .ok_or(Error::InvalidEndOfInstance)?;
+                // Ident check.
+                data.visit(&mut |id| self.check_ident(id))?;
+                // Ignore solver instances.
+                if key != 0 {
+                    let mut inst = self
+                        .instantiations
+                        .get_mut(&key)
+                        .ok_or(Error::InvalidEndOfInstance)?;
+                    if inst.data.is_some() {
+                        return Err(Error::InvalidEndOfInstance);
+                    }
+                    inst.data = Some(data);
+                    let inst = self
+                        .instantiations
+                        .get(&key)
+                        .ok_or(Error::InvalidEndOfInstance)?;
+                    Ok(Some(inst.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+            "[tool-version]" => {
+                line.read_string()?;
+                line.read_string()?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[begin-check]" => {
+                line.read_integer()?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[assign]" => {
+                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
+                line.read_content()?;
+                // ignored
+                Ok(None)
+            }
+            "[conflict]" => {
+                line.read_literals()?
+                    .visit(&mut |id| self.check_ident(id))?;
+                line.read_content()?;
+                // ignored
+                Ok(None)
+            }
+            "[push]" => {
+                line.read_integer()?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[pop]" => {
+                line.read_integer()?;
+                line.read_integer()?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[resolve-lit]" => {
+                line.read_integer()?;
+                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[resolve-process]" => {
+                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            "[eof]" => {
+                line.check_end_of_line()?;
+                // ignored
+                Ok(None)
+            }
+            _ => Err(Error::UnknownCommand),
+        }
+    }
+
+    /// Print debug information about a quantifier instantiation.
+    pub fn log_instance(&self, config: &LogConfig, inst: &QuantInstantiation) -> Result<()> {
         match &inst.kind {
             QuantInstantiationKind::Discovered { .. } => (),
             QuantInstantiationKind::NewMatch {
@@ -67,24 +361,32 @@ impl Model {
                     for (i, vn) in var_names.iter().enumerate() {
                         venv.insert(i as u64, vn.name.clone());
                     }
-                    // Trim the outer "pattern" application.
-                    let trigger = match self.term(trigger)? {
-                        Term::App { name, args, .. } if name == "pattern" && args.len() == 1 => {
-                            &args[0]
-                        }
-                        _ => trigger,
-                    };
-                    println!("{} :: {{ {} }}", name, self.id_to_sexp(&venv, trigger)?);
+                    if config.with_triggers {
+                        // Trim the outer "pattern" application.
+                        let trigger = match self.term(trigger)? {
+                            Term::App { name, args, .. }
+                                if name == "pattern" && args.len() == 1 =>
+                            {
+                                &args[0]
+                            }
+                            _ => trigger,
+                        };
+                        println!("{} :: {{ {} }}", name, self.id_to_sexp(&venv, trigger)?);
+                    } else {
+                        println!("{}", name);
+                    }
                     // Print instantiation terms.
                     let global_venv = BTreeMap::new();
-                    for (i, vn) in var_names.iter().enumerate() {
-                        println!(
-                            "  {} <-- {}",
-                            vn.name.clone(),
-                            self.id_to_sexp(&global_venv, &terms[i])?
-                        );
+                    if config.with_variables {
+                        for (i, vn) in var_names.iter().enumerate() {
+                            println!(
+                                "  {} <-- {}",
+                                vn.name.clone(),
+                                self.id_to_sexp(&global_venv, &terms[i])?
+                            );
+                        }
                     }
-                    if with_used_terms {
+                    if config.with_used_terms {
                         // Print 'used' terms.
                         for u in used {
                             use MatchedTerm::*;
@@ -108,11 +410,11 @@ impl Model {
         Ok(())
     }
 
-    pub fn id_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, id: &Ident) -> Result<String> {
+    fn id_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, id: &Ident) -> Result<String> {
         self.term_to_sexp(venv, self.term(id)?)
     }
 
-    pub fn term_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, term: &Term) -> Result<String> {
+    fn term_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, term: &Term) -> Result<String> {
         use Term::*;
         match term {
             App {
@@ -244,259 +546,6 @@ impl Model {
         self.terms.insert(ident.clone(), term);
         self.qi_dependencies
             .insert(ident, qi_deps.into_iter().collect());
-        Ok(())
-    }
-
-    pub fn process_line(&mut self, bytes: &[u8]) -> Result<()> {
-        let mut line = LineParser::new(bytes);
-        match line.read_string().unwrap().as_ref() {
-            "[mk-app]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let args = line.read_idents()?;
-                line.check_end_of_line()?;
-                let term = Term::App {
-                    name,
-                    args,
-                    meaning: None,
-                };
-                self.set_term(id, term)?;
-            }
-            "[mk-var]" => {
-                let id = line.read_ident()?;
-                let index = line.read_integer()?;
-                line.check_end_of_line()?;
-                let term = Term::Var { index };
-                self.set_term(id, term)?;
-            }
-            "[mk-quant]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let params = line.read_integer()? as usize;
-                let mut triggers = line.read_idents()?;
-                line.check_end_of_line()?;
-                let body = triggers.pop().ok_or(Error::MissingBody)?;
-                let term = Term::Quant {
-                    name,
-                    params,
-                    triggers,
-                    body,
-                    var_names: None,
-                };
-                self.set_term(id, term)?;
-            }
-            "[mk-lambda]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let params = line.read_integer()?;
-                let mut triggers = line.read_idents()?;
-                line.check_end_of_line()?;
-                let body = triggers.pop().ok_or(Error::MissingBody)?;
-                let term = Term::Lambda {
-                    name,
-                    params,
-                    triggers,
-                    body, // NOTE: possibly a proof term
-                };
-                self.set_term(id, term)?;
-            }
-            "[mk-proof]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let args = line.read_idents()?;
-                line.check_end_of_line()?;
-                let term = Term::Proof { name, args };
-                // NOTE: proof terms are often overridden by terms later.
-                self.set_term(id, term)?;
-            }
-            "[attach-meaning]" => {
-                let id = line.read_ident()?;
-                let theory = line.read_string()?;
-                let sexp = line.read_content()?;
-                match self.term_mut(&id)? {
-                    Term::App { meaning, .. } => {
-                        *meaning = Some(Meaning { theory, sexp });
-                    }
-                    _ => {
-                        return Err(Error::CannotAttachMeaning(id));
-                    }
-                }
-            }
-            "[attach-var-names]" => {
-                let id = line.read_ident()?;
-                let names = line.read_var_names()?;
-                line.check_end_of_line()?;
-                match self.term_mut(&id)? {
-                    Term::Quant {
-                        var_names, params, ..
-                    } if names.len() == *params => {
-                        *var_names = Some(names);
-                    }
-                    _ => {
-                        return Err(Error::CannotAttachVarNames(id));
-                    }
-                }
-            }
-            "[inst-discovered]" => {
-                let method = line.read_string()?;
-                let key = line.read_key()?;
-                let quantifier = line.read_ident()?;
-                let terms = line.read_idents()?;
-                let blame = line.read_idents()?;
-                line.check_end_of_line()?;
-                let kind = QuantInstantiationKind::Discovered {
-                    method,
-                    quantifier,
-                    terms,
-                    blame,
-                };
-                let inst = QuantInstantiation { kind, data: None };
-                // Ignore solver instances.
-                if key != 0 {
-                    inst.visit(&mut |id| self.check_ident(id))?;
-                    self.instantiations.insert(key, inst);
-                }
-            }
-            "[new-match]" => {
-                let key = line.read_key()?;
-                let quantifier = line.read_ident()?;
-                let trigger = line.read_ident()?;
-                let terms = line.read_idents()?;
-                let used = line.read_matched_terms()?;
-                line.check_end_of_line()?;
-                let kind = QuantInstantiationKind::NewMatch {
-                    quantifier,
-                    trigger,
-                    terms,
-                    used,
-                };
-                let inst = QuantInstantiation { kind, data: None };
-                // Ignore solver instances.
-                if key != 0 {
-                    inst.visit(&mut |id| self.check_ident(id))?;
-                    self.instantiations.insert(key, inst);
-                }
-            }
-            "[eq-expl]" => {
-                let id = line.read_ident()?;
-                let eq = line.read_equality()?;
-                line.check_end_of_line()?;
-                eq.visit(&mut |id| self.check_ident(id))?;
-                self.equalities.insert(id, eq);
-            }
-            "[instance]" => {
-                let key = line.read_key()?;
-                let term = line.read_ident()?;
-                let generation = line.read_optional_integer()?.unwrap_or_else(|| {
-                    // Defaults to the same "generation" number as the outer instantiation, if any.
-                    self.current_instances
-                        .last()
-                        .map(|(_, data)| data.generation)
-                        .unwrap_or(0)
-                });
-                line.check_end_of_line()?;
-                let data = QuantInstantiationData {
-                    generation,
-                    term,
-                    enodes: Vec::new(),
-                };
-                self.current_instances.push((key, data));
-            }
-            "[attach-enode]" => {
-                // Ignore commands outside of [instance]..[end-of-instance].
-                if !self.current_instances.is_empty() {
-                    let id = line.read_ident()?;
-                    let generation = line.read_integer()?;
-                    line.check_end_of_line()?;
-                    let current_instance = self.current_instances.last_mut().unwrap();
-                    let key = current_instance.0;
-                    let data = &mut current_instance.1;
-                    if generation != data.generation {
-                        println!("{:?}", self.current_instances);
-                        return Err(Error::InvalidEnodeGeneration);
-                    }
-                    data.enodes.push(id.clone());
-                    self.qi_dependencies.insert(id, vec![key]);
-                }
-            }
-            "[end-of-instance]" => {
-                line.check_end_of_line()?;
-                let (key, data) = self
-                    .current_instances
-                    .pop()
-                    .ok_or(Error::InvalidEndOfInstance)?;
-                // Ident check.
-                data.visit(&mut |id| self.check_ident(id))?;
-                // Ignore solver instances.
-                if key != 0 {
-                    let mut inst = self
-                        .instantiations
-                        .get_mut(&key)
-                        .ok_or(Error::InvalidEndOfInstance)?;
-                    if inst.data.is_some() {
-                        return Err(Error::InvalidEndOfInstance);
-                    }
-                    inst.data = Some(data);
-                    self.log_instance(
-                        self.instantiations
-                            .get(&key)
-                            .ok_or(Error::InvalidEndOfInstance)?,
-                        /* with_used_terms */ false,
-                    )?;
-                }
-            }
-            "[tool-version]" => {
-                line.read_string()?;
-                line.read_string()?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[begin-check]" => {
-                line.read_integer()?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[assign]" => {
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.read_content()?;
-                // ignored
-            }
-            "[conflict]" => {
-                line.read_literals()?
-                    .visit(&mut |id| self.check_ident(id))?;
-                line.read_content()?;
-                // ignored
-            }
-            "[push]" => {
-                line.read_integer()?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[pop]" => {
-                line.read_integer()?;
-                line.read_integer()?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[resolve-lit]" => {
-                line.read_integer()?;
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[resolve-process]" => {
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.check_end_of_line()?;
-                // ignored
-            }
-            "[eof]" => {
-                line.check_end_of_line()?;
-                // ignored
-            }
-            _ => {
-                return Err(Error::UnknownCommand);
-            }
-        }
         Ok(())
     }
 }

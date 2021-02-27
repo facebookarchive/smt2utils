@@ -14,7 +14,7 @@ pub struct Ident {
 }
 
 /// Concrete representation of a term.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Term {
     App {
         name: String,
@@ -44,13 +44,14 @@ pub enum Term {
 }
 
 /// A literal (i.e. a signed identifier).
+#[derive(Clone, Debug)]
 pub struct Literal {
     pub id: Ident,
     pub sign: bool,
 }
 
 /// Additional data attached to a term (e.g. integer values).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Meaning {
     pub theory: String,
     pub sexp: String,
@@ -64,7 +65,7 @@ pub struct VarName {
 }
 
 /// Quantifier instantiation (preambule).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum QuantInstantiationKind {
     Discovered {
         method: String,
@@ -81,7 +82,7 @@ pub enum QuantInstantiationKind {
 }
 
 /// Quantifier instantiation (reminder).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct QuantInstantiationData {
     pub generation: u64,
     pub term: Ident,
@@ -89,7 +90,7 @@ pub struct QuantInstantiationData {
 }
 
 /// Quantifier instantiation (all parts).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct QuantInstantiation {
     pub kind: QuantInstantiationKind,
     pub data: Option<QuantInstantiationData>,
