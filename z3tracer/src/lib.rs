@@ -6,15 +6,18 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
-pub mod events;
 pub mod parser;
+pub mod syntax;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use error::{Error, Result};
-use events::*;
 use parser::LineParser;
 use smt2parser::concrete::Symbol;
+use syntax::{
+    Equality, Ident, MatchedTerm, Meaning, QuantInstantiation, QuantInstantiationData,
+    QuantInstantiationKind, Term, Visitor,
+};
 
 #[derive(Default, Debug)]
 pub struct Model {

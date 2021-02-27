@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use crate::error::{Error, Result};
-use crate::events::*;
+use crate::syntax::{Equality, Ident, Literal, MatchedTerm, VarName};
 use smt2parser::concrete::Symbol;
 
 pub(crate) struct LineParser<'a> {
