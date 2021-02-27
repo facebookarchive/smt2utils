@@ -21,6 +21,7 @@ pub enum Error {
     UnknownCommand,
     UnexpectedInput,
     InvalidEndOfInstance,
+    InvalidInstanceKey,
     InvalidMatchKey,
     InvalidLiteral,
     MissingBody,

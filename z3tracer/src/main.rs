@@ -26,8 +26,10 @@ fn process_file(config: &LogConfig, path: PathBuf) -> std::io::Result<()> {
     let mut model = Model::default();
     for line in file.lines() {
         let line = line?;
-        let qi = match model.process_line(line.as_ref()) {
-            Ok(Some(qi)) => qi,
+        match model.process_line(line.as_ref()) {
+            Ok(Some(qi)) => {
+                model.log_instance(config, qi).unwrap();
+            }
             Ok(None) => {
                 continue;
             }
@@ -35,7 +37,6 @@ fn process_file(config: &LogConfig, path: PathBuf) -> std::io::Result<()> {
                 panic!("Error:\n{}\n{:?}\n", line, e);
             }
         };
-        model.log_instance(config, &qi).unwrap();
     }
     println!("Terms: {}", model.terms().len());
     println!("Instantiations: {}", model.instantiations().len());

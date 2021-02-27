@@ -71,7 +71,7 @@ impl Model {
     }
 
     /// Parse the given input line.
-    pub fn process_line(&mut self, bytes: &[u8]) -> Result<Option<QuantInstantiation>> {
+    pub fn process_line(&mut self, bytes: &[u8]) -> Result<Option<u64>> {
         let mut line = LineParser::new(bytes);
         match line.read_string().unwrap().as_ref() {
             "[mk-app]" => {
@@ -268,16 +268,12 @@ impl Model {
                     let mut inst = self
                         .instantiations
                         .get_mut(&key)
-                        .ok_or(Error::InvalidEndOfInstance)?;
+                        .ok_or(Error::InvalidInstanceKey)?;
                     if inst.data.is_some() {
                         return Err(Error::InvalidEndOfInstance);
                     }
                     inst.data = Some(data);
-                    let inst = self
-                        .instantiations
-                        .get(&key)
-                        .ok_or(Error::InvalidEndOfInstance)?;
-                    Ok(Some(inst.clone()))
+                    Ok(Some(key))
                 } else {
                     Ok(None)
                 }
@@ -344,7 +340,11 @@ impl Model {
     }
 
     /// Print debug information about a quantifier instantiation.
-    pub fn log_instance(&self, config: &LogConfig, inst: &QuantInstantiation) -> Result<()> {
+    pub fn log_instance(&self, config: &LogConfig, key: u64) -> Result<()> {
+        let inst = self
+            .instantiations
+            .get(&key)
+            .ok_or(Error::InvalidInstanceKey)?;
         match &inst.kind {
             QuantInstantiationKind::Discovered { .. } => (),
             QuantInstantiationKind::NewMatch {
