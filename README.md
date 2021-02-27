@@ -17,6 +17,9 @@ as Z3 and CVC4.
 * [smt2proxy](smt2proxy) is an experimental tool to intercept and pre-process SMT2
   commands before there are sent to an SMT solver.
 
+* [z3tracer](z3tracer) is an experimental library and tool to process Z3 logs obtained by
+  passing the options `trace=true proof=true`.
+
 The code in this repository is still under active development.
 
 ## Contributing

@@ -5,7 +5,11 @@
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](../LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](../LICENSE-MIT)
 
-This crate provides a parser for Z3 tracing logs.
+This crate provides an experimental parser for Z3 tracing logs obtained by passing
+`trace=true proof=true`.
+
+More information about Z3 tracing logs can be found in the documentation of the
+project [Axiom Profiler](https://github.com/viperproject/axiom-profiler).
 
 ## Contributing
 
