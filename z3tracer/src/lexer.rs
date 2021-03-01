@@ -1,33 +1,70 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Position, Result};
 use crate::syntax::{Equality, Ident, Literal, MatchedTerm, VarName};
 use smt2parser::concrete::Symbol;
 
-pub(crate) struct LineParser<'a> {
-    content: &'a [u8],
+pub struct Lexer<R> {
+    reader: R,
+    current_offset: usize,
+    current_line: usize,
+    current_column: usize,
 }
 
-impl<'a> LineParser<'a> {
-    pub(crate) fn new(line: &'a [u8]) -> Self {
-        Self { content: &line[..] }
+impl<R> Lexer<R>
+where
+    R: std::io::BufRead,
+{
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            current_offset: 0,
+            current_line: 0,
+            current_column: 0,
+        }
     }
 
-    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn current_offset(&self) -> usize {
+        self.current_offset
+    }
+
+    pub fn current_position(&self) -> Position {
+        Position {
+            line: self.current_line,
+            column: self.current_column,
+        }
+    }
+
     fn consume_byte(&mut self) {
-        self.content = &self.content[1..];
+        if let Some(c) = self.peek_byte() {
+            if *c == b'\n' {
+                self.current_line += 1;
+                self.current_column = 0;
+            } else {
+                self.current_column += 1;
+            }
+            self.current_offset += 1;
+            self.reader.consume(1)
+        }
     }
 
     fn read_byte(&mut self) -> Option<u8> {
-        let c = *self.peek_byte()?;
+        let c = self.peek_byte().cloned();
         self.consume_byte();
-        Some(c)
+        c
     }
 
     #[inline]
+    fn peek_bytes(&mut self) -> &[u8] {
+        self.reader
+            .fill_buf()
+            .expect("Error while reading input stream")
+    }
+
     fn peek_byte(&mut self) -> Option<&u8> {
-        self.content.get(0)
+        self.peek_bytes().get(0)
     }
 
     fn skip_space(&mut self) -> bool {
@@ -54,13 +91,6 @@ impl<'a> LineParser<'a> {
         }
     }
 
-    pub(crate) fn check_end_of_line(&mut self) -> Result<()> {
-        match self.peek_byte() {
-            None => Ok(()),
-            _ => Err(Error::UnexpectedInput),
-        }
-    }
-
     /// Read an SMT2 symbol.
     fn read_symbol(&mut self) -> Result<Symbol> {
         let mut bytes = Vec::new();
@@ -70,6 +100,9 @@ impl<'a> LineParser<'a> {
                 if *c == b'|' {
                     self.consume_byte();
                     break;
+                }
+                if *c == b'\n' {
+                    return Err(Error::InvalidSymbol);
                 }
                 bytes.push(*c);
                 self.consume_byte();
@@ -86,7 +119,7 @@ impl<'a> LineParser<'a> {
                 self.skip_spaces();
                 break;
             }
-            if c == b'#' || c == b';' || c == b'(' || c == b')' {
+            if c == b'\n' || c == b'#' || c == b';' || c == b'(' || c == b')' {
                 break;
             }
             bytes.push(c);
@@ -105,7 +138,7 @@ impl<'a> LineParser<'a> {
                 self.skip_spaces();
                 break;
             }
-            if c == b'#' || c == b';' || c == b'(' || c == b')' {
+            if c == b'\n' || c == b'#' || c == b';' || c == b'(' || c == b')' {
                 break;
             }
             bytes.push(c);
@@ -120,6 +153,9 @@ impl<'a> LineParser<'a> {
             if *c == b' ' {
                 self.consume_byte();
                 self.skip_spaces();
+                break;
+            }
+            if *c == b'\n' {
                 break;
             }
             bytes.push(*c);
@@ -150,8 +186,30 @@ impl<'a> LineParser<'a> {
         }
     }
 
-    pub(crate) fn read_content(&mut self) -> Result<String> {
-        Ok(String::from_utf8(self.content.to_vec()).map_err(|_| Error::InvalidUtf8String)?)
+    pub(crate) fn read_end_of_line(&mut self) -> Result<()> {
+        match self.peek_byte() {
+            None => Ok(()),
+            Some(b'\n') => {
+                self.consume_byte();
+                self.skip_spaces();
+                Ok(())
+            }
+            _ => Err(Error::UnexpectedInput),
+        }
+    }
+
+    pub(crate) fn read_line(&mut self) -> Result<String> {
+        let mut bytes = Vec::new();
+        while let Some(c) = self.peek_byte() {
+            if *c == b'\n' {
+                self.consume_byte();
+                self.skip_spaces();
+                break;
+            }
+            bytes.push(*c);
+            self.consume_byte();
+        }
+        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)
     }
 
     pub(crate) fn read_sequence<F, T>(&mut self, f: F) -> Result<Vec<T>>
@@ -163,6 +221,9 @@ impl<'a> LineParser<'a> {
             if *c == b';' {
                 self.consume_byte();
                 self.skip_spaces();
+                break;
+            }
+            if *c == b'\n' {
                 break;
             }
             let item = f(self)?;
@@ -319,7 +380,7 @@ impl std::str::FromStr for Ident {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self> {
-        let mut line = LineParser::new(value.as_ref());
+        let mut line = Lexer::new(value.as_ref());
         line.read_ident()
     }
 }
@@ -329,7 +390,7 @@ impl std::str::FromStr for VarName {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self> {
-        let mut line = LineParser::new(value.as_ref());
+        let mut line = Lexer::new(value.as_ref());
         line.read_var_name()
     }
 }

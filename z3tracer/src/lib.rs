@@ -14,15 +14,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use structopt::StructOpt;
 
 pub mod error;
-pub mod parser;
+mod lexer;
 pub mod syntax;
 
 use error::{Error, Result};
-use parser::LineParser;
 use syntax::{
     Equality, Ident, MatchedTerm, Meaning, QuantInstantiation, QuantInstantiationData,
     QuantInstantiationKind, Term, Visitor,
 };
+
+// TODO: make lexer pub(crate)
+pub use lexer::Lexer;
 
 /// Configuration for the logging of quantifier instantiations.
 #[derive(Debug, Clone, StructOpt)]
@@ -71,14 +73,16 @@ impl Model {
     }
 
     /// Parse the given input line.
-    pub fn process_line(&mut self, bytes: &[u8]) -> Result<Option<u64>> {
-        let mut line = LineParser::new(bytes);
-        match line.read_string().unwrap().as_ref() {
+    pub fn process_line<R>(&mut self, lexer: &mut Lexer<R>) -> Result<Option<u64>>
+    where
+        R: std::io::BufRead,
+    {
+        match lexer.read_string().unwrap().as_ref() {
             "[mk-app]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let args = line.read_idents()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let name = lexer.read_string()?;
+                let args = lexer.read_idents()?;
+                lexer.read_end_of_line()?;
                 let term = Term::App {
                     name,
                     args,
@@ -88,19 +92,19 @@ impl Model {
                 Ok(None)
             }
             "[mk-var]" => {
-                let id = line.read_ident()?;
-                let index = line.read_integer()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let index = lexer.read_integer()?;
+                lexer.read_end_of_line()?;
                 let term = Term::Var { index };
                 self.set_term(id, term)?;
                 Ok(None)
             }
             "[mk-quant]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let params = line.read_integer()? as usize;
-                let mut triggers = line.read_idents()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let name = lexer.read_string()?;
+                let params = lexer.read_integer()? as usize;
+                let mut triggers = lexer.read_idents()?;
+                lexer.read_end_of_line()?;
                 let body = triggers.pop().ok_or(Error::MissingBody)?;
                 let term = Term::Quant {
                     name,
@@ -113,11 +117,11 @@ impl Model {
                 Ok(None)
             }
             "[mk-lambda]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let params = line.read_integer()?;
-                let mut triggers = line.read_idents()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let name = lexer.read_string()?;
+                let params = lexer.read_integer()?;
+                let mut triggers = lexer.read_idents()?;
+                lexer.read_end_of_line()?;
                 let body = triggers.pop().ok_or(Error::MissingBody)?;
                 let term = Term::Lambda {
                     name,
@@ -129,19 +133,19 @@ impl Model {
                 Ok(None)
             }
             "[mk-proof]" => {
-                let id = line.read_ident()?;
-                let name = line.read_string()?;
-                let args = line.read_idents()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let name = lexer.read_string()?;
+                let args = lexer.read_idents()?;
+                lexer.read_end_of_line()?;
                 let term = Term::Proof { name, args };
                 // NOTE: proof terms are often overridden by terms later.
                 self.set_term(id, term)?;
                 Ok(None)
             }
             "[attach-meaning]" => {
-                let id = line.read_ident()?;
-                let theory = line.read_string()?;
-                let sexp = line.read_content()?;
+                let id = lexer.read_ident()?;
+                let theory = lexer.read_string()?;
+                let sexp = lexer.read_line()?;
                 match self.term_mut(&id)? {
                     Term::App { meaning, .. } => {
                         *meaning = Some(Meaning { theory, sexp });
@@ -153,9 +157,9 @@ impl Model {
                 Ok(None)
             }
             "[attach-var-names]" => {
-                let id = line.read_ident()?;
-                let names = line.read_var_names()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let names = lexer.read_var_names()?;
+                lexer.read_end_of_line()?;
                 match self.term_mut(&id)? {
                     Term::Quant {
                         var_names, params, ..
@@ -169,12 +173,12 @@ impl Model {
                 Ok(None)
             }
             "[inst-discovered]" => {
-                let method = line.read_string()?;
-                let key = line.read_key()?;
-                let quantifier = line.read_ident()?;
-                let terms = line.read_idents()?;
-                let blame = line.read_idents()?;
-                line.check_end_of_line()?;
+                let method = lexer.read_string()?;
+                let key = lexer.read_key()?;
+                let quantifier = lexer.read_ident()?;
+                let terms = lexer.read_idents()?;
+                let blame = lexer.read_idents()?;
+                lexer.read_end_of_line()?;
                 let kind = QuantInstantiationKind::Discovered {
                     method,
                     quantifier,
@@ -190,12 +194,12 @@ impl Model {
                 Ok(None)
             }
             "[new-match]" => {
-                let key = line.read_key()?;
-                let quantifier = line.read_ident()?;
-                let trigger = line.read_ident()?;
-                let terms = line.read_idents()?;
-                let used = line.read_matched_terms()?;
-                line.check_end_of_line()?;
+                let key = lexer.read_key()?;
+                let quantifier = lexer.read_ident()?;
+                let trigger = lexer.read_ident()?;
+                let terms = lexer.read_idents()?;
+                let used = lexer.read_matched_terms()?;
+                lexer.read_end_of_line()?;
                 let kind = QuantInstantiationKind::NewMatch {
                     quantifier,
                     trigger,
@@ -211,24 +215,24 @@ impl Model {
                 Ok(None)
             }
             "[eq-expl]" => {
-                let id = line.read_ident()?;
-                let eq = line.read_equality()?;
-                line.check_end_of_line()?;
+                let id = lexer.read_ident()?;
+                let eq = lexer.read_equality()?;
+                lexer.read_end_of_line()?;
                 eq.visit(&mut |id| self.check_ident(id))?;
                 self.equalities.insert(id, eq);
                 Ok(None)
             }
             "[instance]" => {
-                let key = line.read_key()?;
-                let term = line.read_ident()?;
-                let generation = line.read_optional_integer()?.unwrap_or_else(|| {
+                let key = lexer.read_key()?;
+                let term = lexer.read_ident()?;
+                let generation = lexer.read_optional_integer()?.unwrap_or_else(|| {
                     // Defaults to the same "generation" number as the outer instantiation, if any.
                     self.current_instances
                         .last()
                         .map(|(_, data)| data.generation)
                         .unwrap_or(0)
                 });
-                line.check_end_of_line()?;
+                lexer.read_end_of_line()?;
                 let data = QuantInstantiationData {
                     generation,
                     term,
@@ -238,11 +242,11 @@ impl Model {
                 Ok(None)
             }
             "[attach-enode]" => {
+                let id = lexer.read_ident()?;
+                let generation = lexer.read_integer()?;
+                lexer.read_end_of_line()?;
                 // Ignore commands outside of [instance]..[end-of-instance].
                 if !self.current_instances.is_empty() {
-                    let id = line.read_ident()?;
-                    let generation = line.read_integer()?;
-                    line.check_end_of_line()?;
                     let current_instance = self.current_instances.last_mut().unwrap();
                     let key = current_instance.0;
                     let data = &mut current_instance.1;
@@ -256,7 +260,7 @@ impl Model {
                 Ok(None)
             }
             "[end-of-instance]" => {
-                line.check_end_of_line()?;
+                lexer.read_end_of_line()?;
                 let (key, data) = self
                     .current_instances
                     .pop()
@@ -279,61 +283,68 @@ impl Model {
                 }
             }
             "[tool-version]" => {
-                line.read_string()?;
-                line.read_string()?;
-                line.check_end_of_line()?;
+                lexer.read_string()?;
+                lexer.read_string()?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[begin-check]" => {
-                line.read_integer()?;
-                line.check_end_of_line()?;
+                lexer.read_integer()?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[assign]" => {
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.read_content()?;
+                lexer
+                    .read_literal()?
+                    .visit(&mut |id| self.check_ident(id))?;
+                lexer.read_line()?;
                 // ignored
                 Ok(None)
             }
             "[conflict]" => {
-                line.read_literals()?
+                lexer
+                    .read_literals()?
                     .visit(&mut |id| self.check_ident(id))?;
-                line.read_content()?;
+                lexer.read_line()?;
                 // ignored
                 Ok(None)
             }
             "[push]" => {
-                line.read_integer()?;
-                line.check_end_of_line()?;
+                lexer.read_integer()?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[pop]" => {
-                line.read_integer()?;
-                line.read_integer()?;
-                line.check_end_of_line()?;
+                lexer.read_integer()?;
+                lexer.read_integer()?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[resolve-lit]" => {
-                line.read_integer()?;
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.check_end_of_line()?;
+                lexer.read_integer()?;
+                lexer
+                    .read_literal()?
+                    .visit(&mut |id| self.check_ident(id))?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[resolve-process]" => {
-                line.read_literal()?.visit(&mut |id| self.check_ident(id))?;
-                line.check_end_of_line()?;
+                lexer
+                    .read_literal()?
+                    .visit(&mut |id| self.check_ident(id))?;
+                lexer.read_end_of_line()?;
                 // ignored
                 Ok(None)
             }
             "[eof]" => {
-                line.check_end_of_line()?;
+                lexer.read_end_of_line()?;
                 // ignored
-                Ok(None)
+                Err(Error::EndOfInput)
             }
             _ => Err(Error::UnknownCommand),
         }

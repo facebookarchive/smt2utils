@@ -3,9 +3,8 @@
 
 #![forbid(unsafe_code)]
 
-use z3tracer::{LogConfig, Model};
+use z3tracer::{error::Error, Lexer, LogConfig, Model};
 
-use std::io::BufRead;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -22,19 +21,28 @@ struct Options {
 
 fn process_file(config: &LogConfig, path: PathBuf) -> std::io::Result<()> {
     let file = std::io::BufReader::new(std::fs::File::open(&path)?);
+    let mut lexer = Lexer::new(file);
 
     let mut model = Model::default();
-    for line in file.lines() {
-        let line = line?;
-        match model.process_line(line.as_ref()) {
+    loop {
+        match model.process_line(&mut lexer) {
             Ok(Some(qi)) => {
                 model.log_instance(config, qi).unwrap();
             }
             Ok(None) => {
+                // Command was processed but it's not a QI.
                 continue;
             }
+            Err(Error::EndOfInput) => {
+                break;
+            }
             Err(e) => {
-                panic!("Error:\n{}\n{:?}\n", line, e);
+                panic!(
+                    "Error at {:?}:{:?}: {:?}",
+                    path,
+                    lexer.current_position(),
+                    e
+                );
             }
         };
     }

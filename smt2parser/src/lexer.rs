@@ -156,7 +156,7 @@ where
     fn peek_bytes(&mut self) -> &[u8] {
         self.reader
             .fill_buf()
-            .expect("Error while reader input stream")
+            .expect("Error while reading input stream")
     }
 
     fn peek_byte(&mut self) -> Option<&u8> {
