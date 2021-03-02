@@ -5,11 +5,14 @@ use crate::error::{Error, Position, Result};
 use crate::syntax::{Equality, Ident, Literal, MatchedTerm, VarName};
 use smt2parser::concrete::Symbol;
 
+use std::collections::BTreeMap;
+
 pub struct Lexer<R> {
     reader: R,
     current_offset: usize,
     current_line: usize,
     current_column: usize,
+    ident_versions: BTreeMap<(Option<String>, Option<u64>), usize>,
 }
 
 impl<R> Lexer<R>
@@ -22,6 +25,7 @@ where
             current_offset: 0,
             current_line: 0,
             current_column: 0,
+            ident_versions: BTreeMap::new(),
         }
     }
 
@@ -232,33 +236,51 @@ where
         Ok(items)
     }
 
-    pub(crate) fn read_ident(&mut self) -> Result<Ident> {
+    fn make_ident(&mut self, namespace: Option<String>, id: Option<u64>, fresh: bool) -> Ident {
+        let key = (namespace, id);
+        let version = if fresh {
+            let e = self
+                .ident_versions
+                .entry(key.clone())
+                .and_modify(|e| *e += 1)
+                .or_insert(0);
+            *e
+        } else {
+            self.ident_versions.get(&key).cloned().unwrap_or(0)
+        };
+        Ident {
+            namespace: key.0,
+            id: key.1,
+            version,
+        }
+    }
+
+    fn read_ident_internal(&mut self, fresh: bool) -> Result<Ident> {
         let word1 = self.read_word()?;
         match self.peek_byte() {
             Some(b'#') => {
                 self.consume_byte();
                 let word2 = self.read_word()?;
                 if word2.is_empty() {
-                    Ok(Ident {
-                        namespace: Some(word1),
-                        id: None,
-                    })
+                    Ok(self.make_ident(Some(word1), None, fresh))
                 } else {
                     let id = word2.parse().map_err(Error::InvalidInteger)?;
-                    Ok(Ident {
-                        namespace: Some(word1),
-                        id: Some(id),
-                    })
+                    Ok(self.make_ident(Some(word1), Some(id), fresh))
                 }
             }
             _ => {
                 let id = word1.parse().map_err(Error::InvalidInteger)?;
-                Ok(Ident {
-                    namespace: None,
-                    id: Some(id),
-                })
+                Ok(self.make_ident(None, Some(id), fresh))
             }
         }
+    }
+
+    pub(crate) fn read_ident(&mut self) -> Result<Ident> {
+        self.read_ident_internal(false)
+    }
+
+    pub(crate) fn read_fresh_ident(&mut self) -> Result<Ident> {
+        self.read_ident_internal(true)
     }
 
     pub(crate) fn read_idents(&mut self) -> Result<Vec<Ident>> {
@@ -405,21 +427,24 @@ fn test_ident_from_str() {
         Ident::from_str("123").unwrap(),
         Ident {
             namespace: None,
-            id: Some(123)
+            id: Some(123),
+            version: 0,
         }
     );
     assert_eq!(
         Ident::from_str("foo#123").unwrap(),
         Ident {
             namespace: Some("foo".to_string()),
-            id: Some(123)
+            id: Some(123),
+            version: 0,
         }
     );
     assert_eq!(
         Ident::from_str("foo#").unwrap(),
         Ident {
             namespace: Some("foo".to_string()),
-            id: None
+            id: None,
+            version: 0,
         }
     );
 }

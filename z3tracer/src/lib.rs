@@ -81,7 +81,7 @@ impl Model {
     {
         match lexer.read_string().unwrap().as_ref() {
             "[mk-app]" => {
-                let id = lexer.read_ident()?;
+                let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
@@ -94,7 +94,7 @@ impl Model {
                 Ok(None)
             }
             "[mk-var]" => {
-                let id = lexer.read_ident()?;
+                let id = lexer.read_fresh_ident()?;
                 let index = lexer.read_integer()?;
                 lexer.read_end_of_line()?;
                 let term = Term::Var { index };
@@ -102,7 +102,7 @@ impl Model {
                 Ok(None)
             }
             "[mk-quant]" => {
-                let id = lexer.read_ident()?;
+                let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
                 let params = lexer.read_integer()? as usize;
                 let mut triggers = lexer.read_idents()?;
@@ -119,7 +119,7 @@ impl Model {
                 Ok(None)
             }
             "[mk-lambda]" => {
-                let id = lexer.read_ident()?;
+                let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
                 let params = lexer.read_integer()?;
                 let mut triggers = lexer.read_idents()?;
@@ -129,18 +129,24 @@ impl Model {
                     name,
                     params,
                     triggers,
-                    body, // NOTE: possibly a proof term
+                    body,
                 };
                 self.add_term(id, term)?;
                 Ok(None)
             }
             "[mk-proof]" => {
-                let id = lexer.read_ident()?;
+                let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
+                // println!(
+                //     "{} {:?}\n",
+                //     name,
+                //     args.iter().map(
+                //         |id| format!("{}", self.id_to_sexp(&BTreeMap::new(), id).unwrap())
+                //     ).collect::<Vec<_>>()
+                // );
                 let term = Term::Proof { name, args };
-                // NOTE: proof terms are often overridden by terms later.
                 self.add_term(id, term)?;
                 Ok(None)
             }
@@ -595,6 +601,8 @@ impl Model {
     }
 
     fn add_term(&mut self, ident: Ident, term: Term) -> Result<()> {
+        // Never overwrite idents.
+        assert!(!self.terms.contains_key(&ident));
         term.visit(&mut |id| self.check_ident(id))?;
         let data = TermData {
             term,
@@ -625,17 +633,19 @@ impl Model {
         Ok(new_cid)
     }
 
-    fn process_equality(&mut self, id: &Ident, eq: &Equality) -> Result<()> {
+    // TODO: verify equality reasoning.
+    fn process_equality(&mut self, id0: &Ident, eq: &Equality) -> Result<()> {
         use Equality::*;
+
+        let id = self.get_equality_class(id0)?;
         let raw_cid = match eq {
             Root => {
-                // TODO: check consistency.
                 return Ok(());
             }
             Literal(eid, cid) => {
                 // Import dependencies from the equation term.
                 let deps = self.qi_dependencies(eid)?;
-                let t = self.term_data_mut(id)?;
+                let t = self.term_data_mut(&id)?;
                 for d in deps {
                     t.qi_dependencies.insert(d);
                 }
@@ -663,7 +673,6 @@ impl Model {
     }
 
     fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> Result<()> {
-        println!("{:?} =? {:?}", id1, id2);
         let c1 = self.get_equality_class(id1)?;
         let c2 = self.get_equality_class(id2)?;
         if c1 != c2 {

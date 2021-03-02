@@ -4,13 +4,17 @@
 use crate::error::Result;
 use smt2parser::concrete::Symbol;
 
-/// An identifier such as `#45` or `foo#23`. Namespace-only identifiers such
+/// An identifier such as `#45` or `foo#23`.
+/// * Namespace-only identifiers such
 /// as `foo#` are also allowed for Z3 primitive objects.
-/// `#` is used for true and false literals.
+/// * `#` is used for true and false literals.
+/// * An implicit version number is added to disambiguate identifiers
+/// re-used by Z3.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default)]
 pub struct Ident {
     pub namespace: Option<String>,
     pub id: Option<u64>,
+    pub version: usize,
 }
 
 /// Concrete representation of a term.
@@ -131,7 +135,11 @@ impl std::fmt::Debug for Ident {
             Some(id) => format!("{}", id),
             None => String::new(),
         };
-        write!(f, "{}#{}", ns, id)
+        let version = match self.version {
+            0 => String::new(),
+            v => format!("!{}", v),
+        };
+        write!(f, "{}#{}{}", ns, id, version)
     }
 }
 
