@@ -346,7 +346,7 @@ impl Model {
                 // ignored
                 Err(Error::EndOfInput)
             }
-            _ => Err(Error::UnknownCommand),
+            s => Err(Error::UnknownCommand(s.to_string())),
         }
     }
 

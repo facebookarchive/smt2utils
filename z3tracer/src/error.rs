@@ -6,26 +6,21 @@ use crate::syntax::Ident;
 #[derive(Debug)]
 pub enum Error {
     EndOfInput,
-    // Tokens
-    InvalidUtf8String,
-    InvalidIdent(String),
-    InvalidInteger(String),
-    InvalidVarName,
-    InvalidSymbol,
+    // Lexer
+    InvalidUtf8String(std::string::FromUtf8Error),
+    InvalidInteger(std::num::ParseIntError),
     InvalidHexadecimal(String),
-    UnexpectedToken(Option<u8>, u8),
-    InvalidEquality(String),
-    // Parsing
+    UnexpectedChar(Option<u8>, Vec<u8>),
+    UnexpectedWord(String, Vec<&'static str>),
+    // Parser
     UndefinedIdent(Ident),
     CannotOverrideIdent(Ident),
     CannotAttachMeaning(Ident),
     CannotAttachVarNames(Ident),
-    UnknownCommand,
-    UnexpectedInput,
+    UnknownCommand(String),
     InvalidEndOfInstance,
     InvalidInstanceKey,
     InvalidMatchKey,
-    InvalidLiteral,
     MissingBody,
     InvalidEnodeGeneration,
     CannotAttachEnode(usize, usize),

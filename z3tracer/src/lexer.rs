@@ -87,7 +87,7 @@ where
                 self.skip_spaces();
                 Ok(())
             }
-            x => Err(Error::UnexpectedToken(x, token)),
+            x => Err(Error::UnexpectedChar(x, vec![token])),
         }
     }
 
@@ -99,17 +99,17 @@ where
             while let Some(c) = self.peek_byte() {
                 if *c == b'|' {
                     self.consume_byte();
-                    break;
+                    self.skip_spaces();
+                    let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8String)?;
+                    return Ok(Symbol(s));
                 }
                 if *c == b'\n' {
-                    return Err(Error::InvalidSymbol);
+                    return Err(Error::UnexpectedChar(Some(*c), vec![b'|']));
                 }
                 bytes.push(*c);
                 self.consume_byte();
             }
-            self.skip_spaces();
-            let s = String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)?;
-            return Ok(Symbol(s));
+            return Err(Error::UnexpectedChar(None, vec![b'|']));
         }
         // Normal case
         while let Some(c) = self.peek_byte() {
@@ -125,7 +125,7 @@ where
             bytes.push(c);
             self.consume_byte();
         }
-        let s = String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)?;
+        let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8String)?;
         Ok(Symbol(s))
     }
 
@@ -144,7 +144,7 @@ where
             bytes.push(c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
     }
 
     pub(crate) fn read_string(&mut self) -> Result<String> {
@@ -161,7 +161,7 @@ where
             bytes.push(*c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
     }
 
     pub(crate) fn read_key(&mut self) -> Result<u64> {
@@ -172,7 +172,7 @@ where
 
     pub(crate) fn read_integer(&mut self) -> Result<u64> {
         let word = self.read_word()?;
-        word.parse().map_err(|_| Error::InvalidInteger(word))
+        word.parse().map_err(Error::InvalidInteger)
     }
 
     pub(crate) fn read_optional_integer(&mut self) -> Result<Option<u64>> {
@@ -194,7 +194,7 @@ where
                 self.skip_spaces();
                 Ok(())
             }
-            _ => Err(Error::UnexpectedInput),
+            c => Err(Error::UnexpectedChar(c.cloned(), vec![b'\n'])),
         }
     }
 
@@ -209,7 +209,7 @@ where
             bytes.push(*c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
     }
 
     pub(crate) fn read_sequence<F, T>(&mut self, f: F) -> Result<Vec<T>>
@@ -244,7 +244,7 @@ where
                         id: None,
                     })
                 } else {
-                    let id = word2.parse().map_err(|_| Error::InvalidIdent(word2))?;
+                    let id = word2.parse().map_err(Error::InvalidInteger)?;
                     Ok(Ident {
                         namespace: Some(word1),
                         id: Some(id),
@@ -252,7 +252,7 @@ where
                 }
             }
             _ => {
-                let id = word1.parse().map_err(|_| Error::InvalidIdent(word1))?;
+                let id = word1.parse().map_err(Error::InvalidInteger)?;
                 Ok(Ident {
                     namespace: None,
                     id: Some(id),
@@ -282,7 +282,7 @@ where
                 let sort = Symbol("".to_string());
                 Ok(VarName { name, sort })
             }
-            _ => Err(Error::InvalidVarName),
+            c => Err(Error::UnexpectedChar(c.cloned(), vec![b';', b')'])),
         }
     }
 
@@ -334,7 +334,10 @@ where
                 let t = self.read_ident()?;
                 Ok(Equality::Theory(solver, t))
             }
-            s => Err(Error::InvalidEquality(s.to_string())),
+            s => Err(Error::UnexpectedWord(
+                s.to_string(),
+                vec!["root", "lit", "cg", "th"],
+            )),
         }
     }
 
@@ -349,24 +352,24 @@ where
                         self.read_token(b')')?;
                         Ok(Literal { id, sign: false })
                     }
-                    _ => Err(Error::InvalidLiteral),
+                    s => Err(Error::UnexpectedWord(s.to_string(), vec!["not"])),
                 }
             }
-            _ => {
-                match self.read_ident() {
-                    Ok(id) => Ok(Literal { id, sign: true }),
-                    // Z3 sometimes output "true" and "false" literals
-                    Err(Error::InvalidIdent(s)) if matches!(s.as_ref(), "true") => Ok(Literal {
-                        id: Ident::default(),
-                        sign: true,
-                    }),
-                    Err(Error::InvalidIdent(s)) if matches!(s.as_ref(), "false") => Ok(Literal {
-                        id: Ident::default(),
-                        sign: false,
-                    }),
-                    Err(e) => Err(e),
-                }
+            Some(b'0'..=b'9') | Some(b'#') => {
+                let id = self.read_ident()?;
+                Ok(Literal { id, sign: true })
             }
+            _ => match self.read_word()?.as_ref() {
+                "true" => Ok(Literal {
+                    id: Ident::default(),
+                    sign: true,
+                }),
+                "false" => Ok(Literal {
+                    id: Ident::default(),
+                    sign: false,
+                }),
+                s => Err(Error::UnexpectedWord(s.to_string(), vec!["true", "false"])),
+            },
         }
     }
 
