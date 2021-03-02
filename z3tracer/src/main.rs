@@ -48,7 +48,6 @@ fn process_file(config: &LogConfig, path: PathBuf) -> std::io::Result<()> {
     }
     println!("Terms: {}", model.terms().len());
     println!("Instantiations: {}", model.instantiations().len());
-    println!("Equalities: {}", model.equalities().len());
     Ok(())
 }
 

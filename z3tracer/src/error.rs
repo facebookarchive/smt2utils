@@ -14,7 +14,6 @@ pub enum Error {
     UnexpectedWord(String, Vec<&'static str>),
     // Parser
     UndefinedIdent(Ident),
-    CannotOverrideIdent(Ident),
     CannotAttachMeaning(Ident),
     CannotAttachVarNames(Ident),
     UnknownCommand(String),
@@ -24,6 +23,8 @@ pub enum Error {
     MissingBody,
     InvalidEnodeGeneration,
     CannotAttachEnode(usize, usize),
+    UnknownEqualityClass(Ident),
+    UnexpectedEquality(Ident, Ident, Ident, Ident),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

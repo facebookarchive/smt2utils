@@ -7,7 +7,7 @@ use smt2parser::concrete::Symbol;
 /// An identifier such as `#45` or `foo#23`. Namespace-only identifiers such
 /// as `foo#` are also allowed for Z3 primitive objects.
 /// `#` is used for true and false literals.
-#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Debug, Default)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default)]
 pub struct Ident {
     pub namespace: Option<String>,
     pub id: Option<u64>,
@@ -99,8 +99,10 @@ pub struct QuantInstantiation {
 /// Description of a term matching a trigger in `NewMatch`.
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub enum MatchedTerm {
-    RootPattern(Ident),
-    SubPattern(Ident, Ident),
+    /// A term 'T' matching a QI trigger.
+    Trigger(Ident),
+    /// A subterm of such term 'T' equal to a subterm of the QI trigger.
+    Equality(Ident, Ident),
 }
 
 /// Description of an E-matching step.
@@ -116,6 +118,20 @@ impl Ident {
     /// Whether an identifier is the special empty value.
     pub fn is_empty(&self) -> bool {
         self.namespace.is_none() && self.id.is_none()
+    }
+}
+
+impl std::fmt::Debug for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ns = match &self.namespace {
+            Some(x) => x,
+            None => "",
+        };
+        let id = match self.id {
+            Some(id) => format!("{}", id),
+            None => String::new(),
+        };
+        write!(f, "{}#{}", ns, id)
     }
 }
 
@@ -235,8 +251,8 @@ where
     fn visit(&'a self, f: &mut F) -> Result<()> {
         use MatchedTerm::*;
         match self {
-            RootPattern(id) => f(id),
-            SubPattern(id1, id2) => {
+            Trigger(id) => f(id),
+            Equality(id1, id2) => {
                 f(id1)?;
                 f(id2)
             }

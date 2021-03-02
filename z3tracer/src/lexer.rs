@@ -298,9 +298,9 @@ where
                 let t1 = self.read_ident()?;
                 let t2 = self.read_ident()?;
                 self.read_token(b')')?;
-                Ok(MatchedTerm::SubPattern(t1, t2))
+                Ok(MatchedTerm::Equality(t1, t2))
             }
-            _ => Ok(MatchedTerm::RootPattern(self.read_ident()?)),
+            _ => Ok(MatchedTerm::Trigger(self.read_ident()?)),
         }
     }
 

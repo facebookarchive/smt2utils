@@ -26,50 +26,52 @@ use syntax::{
 // TODO: make lexer pub(crate)
 pub use lexer::Lexer;
 
-/// Configuration for the logging of quantifier instantiations.
+/// Configuration for the logging of quantifier instantiations (QIs).
 #[derive(Debug, Clone, StructOpt)]
 pub struct LogConfig {
-    /// Whether to display variable instantiations.
+    /// Whether to display variable instantiations in QIs
     #[structopt(long)]
     with_variables: bool,
 
-    /// Whether to display triggers.
+    /// Whether to display triggers in QIs.
     #[structopt(long)]
     with_triggers: bool,
 
-    /// Whether to display 'used terms'
+    /// Whether to display terms produced by QIs.
+    #[structopt(long)]
+    with_produced_terms: bool,
+
+    /// Whether to display terms used by QIs.
     #[structopt(long)]
     with_used_terms: bool,
+}
+
+#[derive(Debug)]
+pub struct TermData {
+    term: Term,
+    eq_class: Ident,
+    qi_dependencies: BTreeSet<u64>,
 }
 
 #[derive(Default, Debug)]
 pub struct Model {
     // Terms indexed by identifier.
-    terms: BTreeMap<Ident, Term>,
+    terms: BTreeMap<Ident, TermData>,
     // Quantifier instantiations indexed by (hexadecimal) key.
     instantiations: BTreeMap<u64, QuantInstantiation>,
-    // Equality reasoning indexed by target term identifier.
-    equalities: BTreeMap<Ident, Equality>,
-    // Track if a term depends on "enodes" produced by quantifier instantiations.
-    qi_dependencies: BTreeMap<Ident, Vec<u64>>,
     // Stack of current quantifier instances.
     current_instances: Vec<(u64, QuantInstantiationData)>,
 }
 
 impl Model {
     /// All terms in the model.
-    pub fn terms(&self) -> &BTreeMap<Ident, Term> {
+    pub fn terms(&self) -> &BTreeMap<Ident, TermData> {
         &self.terms
     }
 
     /// All instantiations in the model.
     pub fn instantiations(&self) -> &BTreeMap<u64, QuantInstantiation> {
         &self.instantiations
-    }
-
-    /// All equality steps in the model.
-    pub fn equalities(&self) -> &BTreeMap<Ident, Equality> {
-        &self.equalities
     }
 
     /// Parse the given input line.
@@ -88,7 +90,7 @@ impl Model {
                     args,
                     meaning: None,
                 };
-                self.set_term(id, term)?;
+                self.add_term(id, term)?;
                 Ok(None)
             }
             "[mk-var]" => {
@@ -96,7 +98,7 @@ impl Model {
                 let index = lexer.read_integer()?;
                 lexer.read_end_of_line()?;
                 let term = Term::Var { index };
-                self.set_term(id, term)?;
+                self.add_term(id, term)?;
                 Ok(None)
             }
             "[mk-quant]" => {
@@ -113,7 +115,7 @@ impl Model {
                     body,
                     var_names: None,
                 };
-                self.set_term(id, term)?;
+                self.add_term(id, term)?;
                 Ok(None)
             }
             "[mk-lambda]" => {
@@ -129,7 +131,7 @@ impl Model {
                     triggers,
                     body, // NOTE: possibly a proof term
                 };
-                self.set_term(id, term)?;
+                self.add_term(id, term)?;
                 Ok(None)
             }
             "[mk-proof]" => {
@@ -139,7 +141,7 @@ impl Model {
                 lexer.read_end_of_line()?;
                 let term = Term::Proof { name, args };
                 // NOTE: proof terms are often overridden by terms later.
-                self.set_term(id, term)?;
+                self.add_term(id, term)?;
                 Ok(None)
             }
             "[attach-meaning]" => {
@@ -200,6 +202,11 @@ impl Model {
                 let terms = lexer.read_idents()?;
                 let used = lexer.read_matched_terms()?;
                 lexer.read_end_of_line()?;
+                for u in &used {
+                    if let MatchedTerm::Equality(id1, id2) = u {
+                        self.check_equality(id1, id2)?;
+                    }
+                }
                 let kind = QuantInstantiationKind::NewMatch {
                     quantifier,
                     trigger,
@@ -219,7 +226,7 @@ impl Model {
                 let eq = lexer.read_equality()?;
                 lexer.read_end_of_line()?;
                 eq.visit(&mut |id| self.check_ident(id))?;
-                self.equalities.insert(id, eq);
+                self.process_equality(&id, &eq)?;
                 Ok(None)
             }
             "[instance]" => {
@@ -233,6 +240,7 @@ impl Model {
                         .unwrap_or(0)
                 });
                 lexer.read_end_of_line()?;
+                self.add_qi_dependency(&term, key)?;
                 let data = QuantInstantiationData {
                     generation,
                     term,
@@ -251,11 +259,10 @@ impl Model {
                     let key = current_instance.0;
                     let data = &mut current_instance.1;
                     if generation != data.generation {
-                        println!("{:?}", self.current_instances);
                         return Err(Error::InvalidEnodeGeneration);
                     }
                     data.enodes.push(id.clone());
-                    self.qi_dependencies.insert(id, vec![key]);
+                    self.add_qi_dependency(&id, key)?;
                 }
                 Ok(None)
             }
@@ -406,16 +413,24 @@ impl Model {
                         for u in used {
                             use MatchedTerm::*;
                             match u {
-                                RootPattern(id) => {
+                                Trigger(id) => {
                                     println!("  ! {}", self.id_to_sexp(&global_venv, id)?);
                                 }
-                                SubPattern(id1, id2) => {
+                                Equality(id1, id2) => {
                                     println!(
                                         "  !! {} == {}",
                                         self.id_to_sexp(&global_venv, id1)?,
                                         self.id_to_sexp(&global_venv, id2)?
                                     );
                                 }
+                            }
+                        }
+                    }
+                    if config.with_produced_terms {
+                        if let Some(data) = &inst.data {
+                            // Print produced terms (aka attached enodes).
+                            for e in &data.enodes {
+                                println!("  --> {}", self.id_to_sexp(&global_venv, e)?);
                             }
                         }
                     }
@@ -532,6 +547,24 @@ impl Model {
     }
 
     fn term(&self, id: &Ident) -> Result<&Term> {
+        let t = &self
+            .terms
+            .get(id)
+            .ok_or_else(|| Error::UndefinedIdent(id.clone()))?
+            .term;
+        Ok(t)
+    }
+
+    fn term_mut(&mut self, id: &Ident) -> Result<&mut Term> {
+        let t = &mut self
+            .terms
+            .get_mut(id)
+            .ok_or_else(|| Error::UndefinedIdent(id.clone()))?
+            .term;
+        Ok(t)
+    }
+
+    fn term_data(&self, id: &Ident) -> Result<&TermData> {
         let t = self
             .terms
             .get(id)
@@ -539,7 +572,7 @@ impl Model {
         Ok(t)
     }
 
-    fn term_mut(&mut self, id: &Ident) -> Result<&mut Term> {
+    fn term_data_mut(&mut self, id: &Ident) -> Result<&mut TermData> {
         let t = self
             .terms
             .get_mut(id)
@@ -547,20 +580,100 @@ impl Model {
         Ok(t)
     }
 
-    fn set_term(&mut self, ident: Ident, term: Term) -> Result<()> {
-        let mut qi_deps = BTreeSet::new();
-        term.visit(&mut |id| {
-            self.check_ident(id)?;
-            if let Some(deps) = self.qi_dependencies.get(id) {
-                for dep in deps {
-                    qi_deps.insert(*dep);
-                }
+    fn add_qi_dependency(&mut self, id: &Ident, key: u64) -> Result<()> {
+        self.term_data_mut(id)?.qi_dependencies.insert(key);
+        Ok(())
+    }
+
+    fn qi_dependencies(&mut self, id: &Ident) -> Result<Vec<u64>> {
+        Ok(self
+            .term_data(id)?
+            .qi_dependencies
+            .iter()
+            .cloned()
+            .collect())
+    }
+
+    fn add_term(&mut self, ident: Ident, term: Term) -> Result<()> {
+        term.visit(&mut |id| self.check_ident(id))?;
+        let data = TermData {
+            term,
+            eq_class: ident.clone(),
+            qi_dependencies: BTreeSet::new(),
+        };
+        self.terms.insert(ident, data);
+        Ok(())
+    }
+
+    fn get_equality_class(&mut self, id: &Ident) -> Result<Ident> {
+        let cid = self.term_data(id)?.eq_class.clone();
+        if cid == *id {
+            return Ok(cid);
+        }
+        let new_cid = self.get_equality_class(&cid)?;
+        if new_cid == cid {
+            // No change since last time.
+            return Ok(cid);
+        }
+        // Class was updated. We need to re-import dependencies from cid.
+        let deps = self.qi_dependencies(&cid)?;
+        let t = self.term_data_mut(id)?;
+        t.eq_class = new_cid.clone();
+        for d in deps {
+            t.qi_dependencies.insert(d);
+        }
+        Ok(new_cid)
+    }
+
+    fn process_equality(&mut self, id: &Ident, eq: &Equality) -> Result<()> {
+        use Equality::*;
+        let raw_cid = match eq {
+            Root => {
+                // TODO: check consistency.
+                return Ok(());
             }
-            Ok(())
-        })?;
-        self.terms.insert(ident.clone(), term);
-        self.qi_dependencies
-            .insert(ident, qi_deps.into_iter().collect());
+            Literal(eid, cid) => {
+                // Import dependencies from the equation term.
+                let deps = self.qi_dependencies(eid)?;
+                let t = self.term_data_mut(id)?;
+                for d in deps {
+                    t.qi_dependencies.insert(d);
+                }
+                cid
+            }
+            Congruence(eqs, cid) => {
+                // Check congruence equalities.
+                for (id1, id2) in eqs {
+                    self.check_equality(id1, id2)?;
+                }
+                cid
+            }
+            Theory(_, cid) => cid,
+        };
+        // Import class and dependencies from raw_cid.
+        let cid = self.get_equality_class(raw_cid)?;
+        let deps = self.qi_dependencies(raw_cid)?;
+
+        let t = self.term_data_mut(&id)?;
+        t.eq_class = cid;
+        for d in deps {
+            t.qi_dependencies.insert(d);
+        }
+        Ok(())
+    }
+
+    fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> Result<()> {
+        println!("{:?} =? {:?}", id1, id2);
+        let c1 = self.get_equality_class(id1)?;
+        let c2 = self.get_equality_class(id2)?;
+        if c1 != c2 {
+            return Err(Error::UnexpectedEquality(
+                id1.clone(),
+                c1.clone(),
+                id2.clone(),
+                c2.clone(),
+            ));
+        }
         Ok(())
     }
 }
