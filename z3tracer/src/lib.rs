@@ -26,6 +26,10 @@ use syntax::{
 // TODO: make lexer pub(crate)
 pub use lexer::Lexer;
 
+/// The hexadecimal index of a quantifier instantiation (QI).
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
+pub struct QIKey(u64);
+
 /// Configuration for the logging of quantifier instantiations (QIs).
 #[derive(Debug, Clone, StructOpt)]
 pub struct LogConfig {
@@ -50,7 +54,7 @@ pub struct LogConfig {
 pub struct TermData {
     term: Term,
     eq_class: Ident,
-    qi_dependencies: BTreeSet<u64>,
+    qi_dependencies: BTreeSet<QIKey>,
     assignment: Option<bool>,
 }
 
@@ -59,9 +63,9 @@ pub struct Model {
     // Terms indexed by identifier.
     terms: BTreeMap<Ident, TermData>,
     // Quantifier instantiations indexed by (hexadecimal) key.
-    instantiations: BTreeMap<u64, QuantInstantiation>,
+    instantiations: BTreeMap<QIKey, QuantInstantiation>,
     // Stack of current quantifier instances.
-    current_instances: Vec<(u64, QuantInstantiationData)>,
+    current_instances: Vec<(QIKey, QuantInstantiationData)>,
 }
 
 impl Model {
@@ -71,12 +75,35 @@ impl Model {
     }
 
     /// All instantiations in the model.
-    pub fn instantiations(&self) -> &BTreeMap<u64, QuantInstantiation> {
+    pub fn instantiations(&self) -> &BTreeMap<QIKey, QuantInstantiation> {
         &self.instantiations
     }
 
-    /// Parse the given input line.
-    pub fn process_line<R>(&mut self, lexer: &mut Lexer<R>) -> Result<Option<u64>>
+    /// Process the Z3 tracing logs in the given input.
+    pub fn process<R>(&mut self, input: R) -> std::result::Result<(), error::LocatedError>
+    where
+        R: std::io::BufRead,
+    {
+        let mut lexer = Lexer::new(input);
+        loop {
+            match self.process_line(&mut lexer) {
+                Ok(_) => (),
+                Err(Error::EndOfInput) => {
+                    break;
+                }
+                Err(error) => {
+                    return Err(error::LocatedError {
+                        position: lexer.current_position(),
+                        error,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse one line of the given input. Return the key of a QI that was produced, if any.
+    pub fn process_line<R>(&mut self, lexer: &mut Lexer<R>) -> Result<Option<QIKey>>
     where
         R: std::io::BufRead,
     {
@@ -140,6 +167,13 @@ impl Model {
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
+                // println!(
+                //     "{} {:?}\n",
+                //     name,
+                //     args.iter().map(
+                //         |id| format!("{}", self.id_to_sexp(&BTreeMap::new(), id).unwrap())
+                //     ).collect::<Vec<_>>()
+                // );
                 let term = Term::Proof { name, args };
                 self.add_term(id, term)?;
                 Ok(None)
@@ -176,7 +210,7 @@ impl Model {
             }
             "[inst-discovered]" => {
                 let method = lexer.read_string()?;
-                let key = lexer.read_key()?;
+                let key = QIKey(lexer.read_key()?);
                 let quantifier = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
                 let blame = lexer.read_idents()?;
@@ -189,14 +223,14 @@ impl Model {
                 };
                 let inst = QuantInstantiation { kind, data: None };
                 // Ignore solver instances.
-                if key != 0 {
+                if !key.is_zero() {
                     inst.visit(&mut |id| self.check_ident(id))?;
                     self.instantiations.insert(key, inst);
                 }
                 Ok(None)
             }
             "[new-match]" => {
-                let key = lexer.read_key()?;
+                let key = QIKey(lexer.read_key()?);
                 let quantifier = lexer.read_ident()?;
                 let trigger = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
@@ -215,7 +249,7 @@ impl Model {
                 };
                 let inst = QuantInstantiation { kind, data: None };
                 // Ignore solver instances.
-                if key != 0 {
+                if !key.is_zero() {
                     inst.visit(&mut |id| self.check_ident(id))?;
                     self.instantiations.insert(key, inst);
                 }
@@ -230,7 +264,7 @@ impl Model {
                 Ok(None)
             }
             "[instance]" => {
-                let key = lexer.read_key()?;
+                let key = QIKey(lexer.read_key()?);
                 let term = lexer.read_ident()?;
                 let generation = lexer.read_optional_integer()?.unwrap_or_else(|| {
                     // Defaults to the same "generation" number as the outer instantiation, if any.
@@ -275,7 +309,7 @@ impl Model {
                 // Ident check.
                 data.visit(&mut |id| self.check_ident(id))?;
                 // Ignore solver instances.
-                if key != 0 {
+                if !key.is_zero() {
                     let mut inst = self
                         .instantiations
                         .get_mut(&key)
@@ -358,7 +392,7 @@ impl Model {
     }
 
     /// Print debug information about a quantifier instantiation.
-    pub fn log_instance(&self, config: &LogConfig, key: u64) -> Result<()> {
+    pub fn log_instance(&self, config: &LogConfig, key: QIKey) -> Result<()> {
         let inst = self
             .instantiations
             .get(&key)
@@ -580,12 +614,12 @@ impl Model {
         Ok(t)
     }
 
-    fn add_qi_dependency(&mut self, id: &Ident, key: u64) -> Result<()> {
+    fn add_qi_dependency(&mut self, id: &Ident, key: QIKey) -> Result<()> {
         self.term_data_mut(id)?.qi_dependencies.insert(key);
         Ok(())
     }
 
-    fn qi_dependencies(&mut self, id: &Ident) -> Result<Vec<u64>> {
+    fn qi_dependencies(&mut self, id: &Ident) -> Result<Vec<QIKey>> {
         Ok(self
             .term_data(id)?
             .qi_dependencies
@@ -758,5 +792,11 @@ impl Model {
             return Err(Error::CannotCheckEquality(id1.clone(), id2.clone()));
         }
         Ok(())
+    }
+}
+
+impl QIKey {
+    fn is_zero(&self) -> bool {
+        self.0 == 0
     }
 }

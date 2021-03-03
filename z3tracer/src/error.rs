@@ -27,6 +27,7 @@ pub enum Error {
     CannotCheckEquality(Ident, Ident),
 }
 
+/// Result type based on `Error`.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Record a position in the input stream.
@@ -36,17 +37,18 @@ pub struct Position {
     pub column: usize,
 }
 
+/// Similar to `Error` but includes a position where the error occurred.
+pub struct LocatedError {
+    pub position: Position,
+    pub error: Error,
+}
+
 impl Position {
     pub fn new(line: usize, column: usize) -> Self {
         Self { line, column }
     }
 
-    pub fn location_in_file(&self, path: &std::path::PathBuf) -> String {
-        format!(
-            "{}:{}:{}",
-            path.to_string_lossy(),
-            self.line + 1,
-            self.column + 1
-        )
+    pub fn location_in_file(&self, path: &str) -> String {
+        format!("{}:{}:{}", path, self.line + 1, self.column + 1)
     }
 }

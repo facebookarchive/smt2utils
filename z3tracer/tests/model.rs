@@ -1,27 +1,17 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use z3tracer::{error::Error, Lexer, Model};
+use z3tracer::Model;
 
 fn process_file(path: &str) -> std::io::Result<Model> {
     let file = std::io::BufReader::new(std::fs::File::open(path)?);
-    let mut lexer = Lexer::new(file);
     let mut model = Model::default();
-    loop {
-        match model.process_line(&mut lexer) {
-            Ok(_) => (),
-            Err(Error::EndOfInput) => {
-                break;
-            }
-            Err(e) => {
-                panic!(
-                    "Error at {:?}:{:?}: {:?}",
-                    path,
-                    lexer.current_position(),
-                    e
-                );
-            }
-        };
+    if let Err(le) = model.process(file) {
+        panic!(
+            "Error at {}: {:?}",
+            le.position.location_in_file(path),
+            le.error,
+        );
     }
     Ok(model)
 }
