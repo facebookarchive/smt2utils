@@ -140,13 +140,6 @@ impl Model {
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
-                // println!(
-                //     "{} {:?}\n",
-                //     name,
-                //     args.iter().map(
-                //         |id| format!("{}", self.id_to_sexp(&BTreeMap::new(), id).unwrap())
-                //     ).collect::<Vec<_>>()
-                // );
                 let term = Term::Proof { name, args };
                 self.add_term(id, term)?;
                 Ok(None)
@@ -740,12 +733,6 @@ impl Model {
                     self.check_equality(id1, id2)?;
                 }
                 if !self.check_congruence_equality(eqs, id0, cid)? {
-                    println!(
-                        "{:?} !!!! {:?} != {:?}",
-                        eq,
-                        self.term(id0)?,
-                        self.term(cid)?
-                    );
                     return Err(Error::CannotProcessEquality(id0.clone(), eq.clone()));
                 }
                 cid
@@ -756,7 +743,6 @@ impl Model {
         let cid = self.get_equality_class(raw_cid)?;
         let deps = self.qi_dependencies(raw_cid)?;
 
-        // println!("{:?} ==> {:?} -> {:?} -> {:?}", eq, id, raw_cid, cid);
         let t = self.term_data_mut(&id)?;
         t.eq_class = cid;
         for d in deps {
