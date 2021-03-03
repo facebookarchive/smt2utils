@@ -3,9 +3,8 @@
 
 use crate::syntax::{Equality, Ident};
 
-#[derive(Debug)]
-pub enum Error {
-    EndOfInput,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum RawError {
     // Lexer
     InvalidUtf8String(std::string::FromUtf8Error),
     InvalidInteger(std::num::ParseIntError),
@@ -27,28 +26,33 @@ pub enum Error {
     CannotCheckEquality(Ident, Ident),
 }
 
-/// Result type based on `Error`.
-pub type Result<T> = std::result::Result<T, Error>;
-
 /// Record a position in the input stream.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Position {
+    pub path_name: Option<String>,
     pub line: usize,
     pub column: usize,
 }
 
-/// Similar to `Error` but includes a position where the error occurred.
-pub struct LocatedError {
+/// Similar to `RawError` but includes a position where the error occurred.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Error {
     pub position: Position,
-    pub error: Error,
+    pub error: RawError,
 }
 
-impl Position {
-    pub fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
-    }
+/// Result type based on `RawError`.
+pub type RawResult<T> = std::result::Result<T, RawError>;
 
-    pub fn location_in_file(&self, path: &str) -> String {
-        format!("{}:{}:{}", path, self.line + 1, self.column + 1)
+/// Result type based on `Error`.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl std::fmt::Debug for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let file = match &self.path_name {
+            Some(p) => format!("{}:", p),
+            None => String::new(),
+        };
+        write!(f, "{}{}:{}", file, self.line + 1, self.column + 1)
     }
 }

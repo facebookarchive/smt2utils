@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::error::{Error, Position, Result};
+use crate::error::{Error, Position, RawError, RawResult};
 use crate::syntax::{Equality, Ident, Literal, MatchedTerm, VarName};
 use smt2parser::concrete::Symbol;
 
@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 pub struct Lexer<R> {
     reader: R,
+    path_name: Option<String>,
     current_offset: usize,
     current_line: usize,
     current_column: usize,
@@ -19,8 +20,9 @@ impl<R> Lexer<R>
 where
     R: std::io::BufRead,
 {
-    pub fn new(reader: R) -> Self {
+    pub fn new(path_name: Option<String>, reader: R) -> Self {
         Self {
+            path_name,
             reader,
             current_offset: 0,
             current_line: 0,
@@ -29,15 +31,18 @@ where
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn current_offset(&self) -> usize {
-        self.current_offset
-    }
-
-    pub fn current_position(&self) -> Position {
+    fn current_position(&self) -> Position {
         Position {
+            path_name: self.path_name.clone(),
             line: self.current_line,
             column: self.current_column,
+        }
+    }
+
+    pub fn make_error(&self, error: RawError) -> Error {
+        Error {
+            position: self.current_position(),
+            error,
         }
     }
 
@@ -85,18 +90,18 @@ where
         while self.skip_space() {}
     }
 
-    fn read_token(&mut self, token: u8) -> Result<()> {
+    fn read_token(&mut self, token: u8) -> RawResult<()> {
         match self.read_byte() {
             Some(c) if c == token => {
                 self.skip_spaces();
                 Ok(())
             }
-            x => Err(Error::UnexpectedChar(x, vec![token])),
+            x => Err(RawError::UnexpectedChar(x, vec![token])),
         }
     }
 
     /// Read an SMT2 symbol.
-    fn read_symbol(&mut self) -> Result<Symbol> {
+    fn read_symbol(&mut self) -> RawResult<Symbol> {
         let mut bytes = Vec::new();
         if let Some(b'|') = self.peek_byte() {
             self.consume_byte();
@@ -104,16 +109,16 @@ where
                 if *c == b'|' {
                     self.consume_byte();
                     self.skip_spaces();
-                    let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8String)?;
+                    let s = String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)?;
                     return Ok(Symbol(s));
                 }
                 if *c == b'\n' {
-                    return Err(Error::UnexpectedChar(Some(*c), vec![b'|']));
+                    return Err(RawError::UnexpectedChar(Some(*c), vec![b'|']));
                 }
                 bytes.push(*c);
                 self.consume_byte();
             }
-            return Err(Error::UnexpectedChar(None, vec![b'|']));
+            return Err(RawError::UnexpectedChar(None, vec![b'|']));
         }
         // Normal case
         while let Some(c) = self.peek_byte() {
@@ -129,11 +134,11 @@ where
             bytes.push(c);
             self.consume_byte();
         }
-        let s = String::from_utf8(bytes).map_err(Error::InvalidUtf8String)?;
+        let s = String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)?;
         Ok(Symbol(s))
     }
 
-    fn read_word(&mut self) -> Result<String> {
+    fn read_word(&mut self) -> RawResult<String> {
         let mut bytes = Vec::new();
         while let Some(c) = self.peek_byte() {
             let c = *c;
@@ -148,10 +153,10 @@ where
             bytes.push(c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)
     }
 
-    pub(crate) fn read_string(&mut self) -> Result<String> {
+    pub(crate) fn read_string(&mut self) -> RawResult<String> {
         let mut bytes = Vec::new();
         while let Some(c) = self.peek_byte() {
             if *c == b' ' {
@@ -165,21 +170,21 @@ where
             bytes.push(*c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)
     }
 
-    pub(crate) fn read_key(&mut self) -> Result<u64> {
+    pub(crate) fn read_key(&mut self) -> RawResult<u64> {
         let word = self.read_word()?;
         u64::from_str_radix(word.trim_start_matches("0x"), 16)
-            .map_err(|_| Error::InvalidHexadecimal(word))
+            .map_err(|_| RawError::InvalidHexadecimal(word))
     }
 
-    pub(crate) fn read_integer(&mut self) -> Result<u64> {
+    pub(crate) fn read_integer(&mut self) -> RawResult<u64> {
         let word = self.read_word()?;
-        word.parse().map_err(Error::InvalidInteger)
+        word.parse().map_err(RawError::InvalidInteger)
     }
 
-    pub(crate) fn read_optional_integer(&mut self) -> Result<Option<u64>> {
+    pub(crate) fn read_optional_integer(&mut self) -> RawResult<Option<u64>> {
         match self.peek_byte() {
             Some(b';') => {
                 self.consume_byte();
@@ -190,7 +195,7 @@ where
         }
     }
 
-    pub(crate) fn read_end_of_line(&mut self) -> Result<()> {
+    pub(crate) fn read_end_of_line(&mut self) -> RawResult<()> {
         match self.peek_byte() {
             None => Ok(()),
             Some(b'\n') => {
@@ -198,11 +203,11 @@ where
                 self.skip_spaces();
                 Ok(())
             }
-            c => Err(Error::UnexpectedChar(c.cloned(), vec![b'\n'])),
+            c => Err(RawError::UnexpectedChar(c.cloned(), vec![b'\n'])),
         }
     }
 
-    pub(crate) fn read_line(&mut self) -> Result<String> {
+    pub(crate) fn read_line(&mut self) -> RawResult<String> {
         let mut bytes = Vec::new();
         while let Some(c) = self.peek_byte() {
             if *c == b'\n' {
@@ -213,12 +218,12 @@ where
             bytes.push(*c);
             self.consume_byte();
         }
-        String::from_utf8(bytes).map_err(Error::InvalidUtf8String)
+        String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)
     }
 
-    pub(crate) fn read_sequence<F, T>(&mut self, f: F) -> Result<Vec<T>>
+    pub(crate) fn read_sequence<F, T>(&mut self, f: F) -> RawResult<Vec<T>>
     where
-        F: Fn(&mut Self) -> Result<T>,
+        F: Fn(&mut Self) -> RawResult<T>,
     {
         let mut items = Vec::new();
         while let Some(c) = self.peek_byte() {
@@ -255,7 +260,7 @@ where
         }
     }
 
-    fn read_ident_internal(&mut self, fresh: bool) -> Result<Ident> {
+    fn read_ident_internal(&mut self, fresh: bool) -> RawResult<Ident> {
         let word1 = self.read_word()?;
         match self.peek_byte() {
             Some(b'#') => {
@@ -264,30 +269,30 @@ where
                 if word2.is_empty() {
                     Ok(self.make_ident(Some(word1), None, fresh))
                 } else {
-                    let id = word2.parse().map_err(Error::InvalidInteger)?;
+                    let id = word2.parse().map_err(RawError::InvalidInteger)?;
                     Ok(self.make_ident(Some(word1), Some(id), fresh))
                 }
             }
             _ => {
-                let id = word1.parse().map_err(Error::InvalidInteger)?;
+                let id = word1.parse().map_err(RawError::InvalidInteger)?;
                 Ok(self.make_ident(None, Some(id), fresh))
             }
         }
     }
 
-    pub(crate) fn read_ident(&mut self) -> Result<Ident> {
+    pub(crate) fn read_ident(&mut self) -> RawResult<Ident> {
         self.read_ident_internal(false)
     }
 
-    pub(crate) fn read_fresh_ident(&mut self) -> Result<Ident> {
+    pub(crate) fn read_fresh_ident(&mut self) -> RawResult<Ident> {
         self.read_ident_internal(true)
     }
 
-    pub(crate) fn read_idents(&mut self) -> Result<Vec<Ident>> {
+    pub(crate) fn read_idents(&mut self) -> RawResult<Vec<Ident>> {
         self.read_sequence(Self::read_ident)
     }
 
-    pub(crate) fn read_var_name(&mut self) -> Result<VarName> {
+    pub(crate) fn read_var_name(&mut self) -> RawResult<VarName> {
         self.read_token(b'(')?;
         let name = self.read_symbol()?;
         match self.peek_byte() {
@@ -304,15 +309,15 @@ where
                 let sort = Symbol("".to_string());
                 Ok(VarName { name, sort })
             }
-            c => Err(Error::UnexpectedChar(c.cloned(), vec![b';', b')'])),
+            c => Err(RawError::UnexpectedChar(c.cloned(), vec![b';', b')'])),
         }
     }
 
-    pub(crate) fn read_var_names(&mut self) -> Result<Vec<VarName>> {
+    pub(crate) fn read_var_names(&mut self) -> RawResult<Vec<VarName>> {
         self.read_sequence(Self::read_var_name)
     }
 
-    pub(crate) fn read_matched_term(&mut self) -> Result<MatchedTerm> {
+    pub(crate) fn read_matched_term(&mut self) -> RawResult<MatchedTerm> {
         match self.peek_byte() {
             Some(b'(') => {
                 self.consume_byte();
@@ -326,11 +331,11 @@ where
         }
     }
 
-    pub(crate) fn read_matched_terms(&mut self) -> Result<Vec<MatchedTerm>> {
+    pub(crate) fn read_matched_terms(&mut self) -> RawResult<Vec<MatchedTerm>> {
         self.read_sequence(Self::read_matched_term)
     }
 
-    pub(crate) fn read_equality(&mut self) -> Result<Equality> {
+    pub(crate) fn read_equality(&mut self) -> RawResult<Equality> {
         match self.read_string()?.as_ref() {
             "root" => Ok(Equality::Root),
             "lit" => {
@@ -356,14 +361,14 @@ where
                 let t = self.read_ident()?;
                 Ok(Equality::Theory(solver, t))
             }
-            s => Err(Error::UnexpectedWord(
+            s => Err(RawError::UnexpectedWord(
                 s.to_string(),
                 vec!["root", "lit", "cg", "th"],
             )),
         }
     }
 
-    pub(crate) fn read_literal(&mut self) -> Result<Literal> {
+    pub(crate) fn read_literal(&mut self) -> RawResult<Literal> {
         match self.peek_byte() {
             Some(b'(') => {
                 self.consume_byte();
@@ -374,7 +379,7 @@ where
                         self.read_token(b')')?;
                         Ok(Literal { id, sign: false })
                     }
-                    s => Err(Error::UnexpectedWord(s.to_string(), vec!["not"])),
+                    s => Err(RawError::UnexpectedWord(s.to_string(), vec!["not"])),
                 }
             }
             Some(b'0'..=b'9') | Some(b'#') => {
@@ -390,32 +395,35 @@ where
                     id: Ident::default(),
                     sign: false,
                 }),
-                s => Err(Error::UnexpectedWord(s.to_string(), vec!["true", "false"])),
+                s => Err(RawError::UnexpectedWord(
+                    s.to_string(),
+                    vec!["true", "false"],
+                )),
             },
         }
     }
 
-    pub(crate) fn read_literals(&mut self) -> Result<Vec<Literal>> {
+    pub(crate) fn read_literals(&mut self) -> RawResult<Vec<Literal>> {
         self.read_sequence(Self::read_literal)
     }
 }
 
 #[cfg(test)]
 impl std::str::FromStr for Ident {
-    type Err = Error;
+    type Err = RawError;
 
-    fn from_str(value: &str) -> Result<Self> {
-        let mut line = Lexer::new(value.as_ref());
+    fn from_str(value: &str) -> RawResult<Self> {
+        let mut line = Lexer::new(None, value.as_ref());
         line.read_ident()
     }
 }
 
 #[cfg(test)]
 impl std::str::FromStr for VarName {
-    type Err = Error;
+    type Err = RawError;
 
-    fn from_str(value: &str) -> Result<Self> {
-        let mut line = Lexer::new(value.as_ref());
+    fn from_str(value: &str) -> RawResult<Self> {
+        let mut line = Lexer::new(None, value.as_ref());
         line.read_var_name()
     }
 }

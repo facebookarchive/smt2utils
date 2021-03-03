@@ -1,7 +1,6 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::error::Result;
 use smt2parser::concrete::Symbol;
 
 /// An identifier such as `#45` or `foo#23`.
@@ -144,15 +143,15 @@ impl std::fmt::Debug for Ident {
 }
 
 /// Visitor trait for syntactic constructs.
-pub trait Visitor<'a, F> {
-    fn visit(&'a self, f: &mut F) -> Result<()>;
+pub trait Visitor<'a, F, E> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E>;
 }
 
-impl<'a, T, F> Visitor<'a, F> for Vec<T>
+impl<'a, T, F, E> Visitor<'a, F, E> for Vec<T>
 where
-    T: Visitor<'a, F>,
+    T: Visitor<'a, F, E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         for x in self {
             x.visit(f)?;
         }
@@ -160,11 +159,11 @@ where
     }
 }
 
-impl<'a, T, F> Visitor<'a, F> for Option<T>
+impl<'a, T, F, E> Visitor<'a, F, E> for Option<T>
 where
-    T: Visitor<'a, F>,
+    T: Visitor<'a, F, E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         if let Some(x) = self {
             x.visit(f)?;
         }
@@ -172,40 +171,40 @@ where
     }
 }
 
-impl<'a, T1, T2, F> Visitor<'a, F> for (T1, T2)
+impl<'a, T1, T2, F, E> Visitor<'a, F, E> for (T1, T2)
 where
-    T1: Visitor<'a, F>,
-    T2: Visitor<'a, F>,
+    T1: Visitor<'a, F, E>,
+    T2: Visitor<'a, F, E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         self.0.visit(f)?;
         self.1.visit(f)
     }
 }
 
-impl<'a, F> Visitor<'a, F> for Ident
+impl<'a, F, E> Visitor<'a, F, E> for Ident
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         f(self)
     }
 }
 
-impl<'a, F> Visitor<'a, F> for Literal
+impl<'a, F, E> Visitor<'a, F, E> for Literal
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         f(&self.id)
     }
 }
 
-impl<'a, F> Visitor<'a, F> for Term
+impl<'a, F, E> Visitor<'a, F, E> for Term
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         use Term::*;
         match self {
             App { args, .. } => args.visit(f),
@@ -223,11 +222,11 @@ where
     }
 }
 
-impl<'a, F> Visitor<'a, F> for QuantInstantiationKind
+impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiationKind
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         use QuantInstantiationKind::*;
         match self {
             Discovered { terms, blame, .. } => {
@@ -242,21 +241,21 @@ where
     }
 }
 
-impl<'a, F> Visitor<'a, F> for QuantInstantiation
+impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiation
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         self.kind.visit(f)?;
         self.data.visit(f)
     }
 }
 
-impl<'a, F> Visitor<'a, F> for MatchedTerm
+impl<'a, F, E> Visitor<'a, F, E> for MatchedTerm
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         use MatchedTerm::*;
         match self {
             Trigger(id) => f(id),
@@ -268,11 +267,11 @@ where
     }
 }
 
-impl<'a, F> Visitor<'a, F> for Equality
+impl<'a, F, E> Visitor<'a, F, E> for Equality
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         use Equality::*;
         match self {
             Root => Ok(()),
@@ -289,11 +288,11 @@ where
     }
 }
 
-impl<'a, F> Visitor<'a, F> for QuantInstantiationData
+impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiationData
 where
-    F: FnMut(&'a Ident) -> Result<()>,
+    F: FnMut(&'a Ident) -> Result<(), E>,
 {
-    fn visit(&'a self, f: &mut F) -> Result<()> {
+    fn visit(&'a self, f: &mut F) -> Result<(), E> {
         self.term.visit(f)?;
         self.enodes.visit(f)
     }
