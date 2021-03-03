@@ -15,7 +15,7 @@ fn process_file(path: &str) -> std::io::Result<Model> {
 #[test]
 fn test_file1() -> std::io::Result<()> {
     let model = process_file("tests/data/file1.log")?;
-    assert_eq!(model.terms().len(), 273318);
-    assert_eq!(model.instantiations().len(), 3023);
+    assert_eq!(model.count_terms(), 273318);
+    assert_eq!(model.count_instantiations(), 3023);
     Ok(())
 }

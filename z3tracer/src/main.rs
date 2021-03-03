@@ -25,8 +25,8 @@ fn process_file(config: ModelConfig, path: PathBuf) -> std::io::Result<()> {
     if let Err(le) = model.process(path.to_str().map(String::from), file) {
         panic!("Error at {:?}: {:?}", le.position, le.error);
     }
-    println!("Terms: {}", model.terms().len());
-    println!("Instantiations: {}", model.instantiations().len());
+    println!("Terms: {}", model.count_terms());
+    println!("Instantiations: {}", model.count_instantiations());
     Ok(())
 }
 
