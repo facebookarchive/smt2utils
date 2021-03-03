@@ -10,7 +10,7 @@ use smt2parser::concrete::Symbol;
 /// * `#` is used for true and false literals.
 /// * An implicit version number is added to disambiguate identifiers
 /// re-used by Z3.
-#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default, Hash)]
 pub struct Ident {
     pub namespace: Option<String>,
     pub id: Option<u64>,
@@ -18,7 +18,7 @@ pub struct Ident {
 }
 
 /// Concrete representation of a term.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Term {
     App {
         name: String,
@@ -55,14 +55,14 @@ pub struct Literal {
 }
 
 /// Additional data attached to a term (e.g. integer values).
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Meaning {
     pub theory: String,
     pub sexp: String,
 }
 
 /// A parameter declaration.
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug, Hash)]
 pub struct VarName {
     pub name: Symbol,
     pub sort: Symbol,

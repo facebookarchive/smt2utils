@@ -10,7 +10,7 @@
 #![forbid(unsafe_code)]
 
 use smt2parser::concrete::Symbol;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use structopt::StructOpt;
 
 pub mod error;
@@ -51,6 +51,7 @@ pub struct TermData {
     term: Term,
     eq_class: Ident,
     qi_dependencies: BTreeSet<u64>,
+    assignment: Option<bool>,
 }
 
 #[derive(Default, Debug)]
@@ -309,10 +310,10 @@ impl Model {
                 Ok(None)
             }
             "[assign]" => {
-                lexer
-                    .read_literal()?
-                    .visit(&mut |id| self.check_ident(id))?;
+                let lit = lexer.read_literal()?;
                 lexer.read_line()?;
+                lit.visit(&mut |id| self.check_ident(id))?;
+                self.term_data_mut(&lit.id)?.assignment = Some(lit.sign);
                 // ignored
                 Ok(None)
             }
@@ -608,6 +609,7 @@ impl Model {
             term,
             eq_class: ident.clone(),
             qi_dependencies: BTreeSet::new(),
+            assignment: None,
         };
         self.terms.insert(ident, data);
         Ok(())
@@ -633,16 +635,97 @@ impl Model {
         Ok(new_cid)
     }
 
-    // TODO: verify equality reasoning.
+    fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> Result<bool> {
+        // Normal case.
+        if let Term::App { name, args, .. } = self.term(eid)? {
+            if name.as_str() == "=" && args.len() == 2 {
+                if &args[0] == id1 && &args[1] == id2 || &args[0] == id2 && &args[1] == id1 {
+                    return Ok(true);
+                }
+            }
+        }
+        // Assigned term.
+        if eid == id1 {
+            let t = self.term_data(eid)?;
+            match (t.assignment, self.term(id2)?) {
+                (Some(b), Term::App { name, args, .. })
+                    if args.is_empty() && name.as_str() == if b { "true" } else { "false" } =>
+                {
+                    return Ok(true);
+                }
+                _ => (),
+            }
+        }
+        Ok(false)
+    }
+
+    fn check_congruence_equality(
+        &self,
+        eqs: &[(Ident, Ident)],
+        id1: &Ident,
+        id2: &Ident,
+    ) -> Result<bool> {
+        let eqs = eqs.iter().cloned().collect::<HashSet<_>>();
+        self.check_matching_ids(&eqs, id1, id2)
+    }
+
+    fn check_matching_ids(
+        &self,
+        eqs: &HashSet<(Ident, Ident)>,
+        id1: &Ident,
+        id2: &Ident,
+    ) -> Result<bool> {
+        if id1 == id2 {
+            return Ok(true);
+        }
+        if eqs.contains(&(id1.clone(), id2.clone())) {
+            return Ok(true);
+        }
+        let t1 = self.term(id1)?;
+        let t2 = self.term(id2)?;
+        self.check_matching_terms(eqs, t1, t2)
+    }
+
+    fn check_matching_terms(
+        &self,
+        eqs: &HashSet<(Ident, Ident)>,
+        t1: &Term,
+        t2: &Term,
+    ) -> Result<bool> {
+        use Term::*;
+        match (t1, t2) {
+            (
+                App {
+                    name: n1, args: a1, ..
+                },
+                App {
+                    name: n2, args: a2, ..
+                },
+            ) if n1 == n2 && a1.len() == a2.len() => {
+                for i in 0..a1.len() {
+                    if !self.check_matching_ids(eqs, &a1[i], &a2[i])? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn process_equality(&mut self, id0: &Ident, eq: &Equality) -> Result<()> {
         use Equality::*;
 
         let id = self.get_equality_class(id0)?;
         let raw_cid = match eq {
             Root => {
+                // id == *id0 is expected but not strictly guaranteed.
                 return Ok(());
             }
             Literal(eid, cid) => {
+                if !self.check_literal_equality(eid, id0, cid)? {
+                    return Err(Error::CannotProcessEquality(id0.clone(), eq.clone()));
+                }
                 // Import dependencies from the equation term.
                 let deps = self.qi_dependencies(eid)?;
                 let t = self.term_data_mut(&id)?;
@@ -656,6 +739,15 @@ impl Model {
                 for (id1, id2) in eqs {
                     self.check_equality(id1, id2)?;
                 }
+                if !self.check_congruence_equality(eqs, id0, cid)? {
+                    println!(
+                        "{:?} !!!! {:?} != {:?}",
+                        eq,
+                        self.term(id0)?,
+                        self.term(cid)?
+                    );
+                    return Err(Error::CannotProcessEquality(id0.clone(), eq.clone()));
+                }
                 cid
             }
             Theory(_, cid) => cid,
@@ -664,6 +756,7 @@ impl Model {
         let cid = self.get_equality_class(raw_cid)?;
         let deps = self.qi_dependencies(raw_cid)?;
 
+        // println!("{:?} ==> {:?} -> {:?} -> {:?}", eq, id, raw_cid, cid);
         let t = self.term_data_mut(&id)?;
         t.eq_class = cid;
         for d in deps {
@@ -676,12 +769,7 @@ impl Model {
         let c1 = self.get_equality_class(id1)?;
         let c2 = self.get_equality_class(id2)?;
         if c1 != c2 {
-            return Err(Error::UnexpectedEquality(
-                id1.clone(),
-                c1.clone(),
-                id2.clone(),
-                c2.clone(),
-            ));
+            return Err(Error::CannotCheckEquality(id1.clone(), id2.clone()));
         }
         Ok(())
     }

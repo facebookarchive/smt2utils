@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::syntax::Ident;
+use crate::syntax::{Equality, Ident};
 
 #[derive(Debug)]
 pub enum Error {
@@ -23,8 +23,8 @@ pub enum Error {
     MissingBody,
     InvalidEnodeGeneration,
     CannotAttachEnode(usize, usize),
-    UnknownEqualityClass(Ident),
-    UnexpectedEquality(Ident, Ident, Ident, Ident),
+    CannotProcessEquality(Ident, Equality),
+    CannotCheckEquality(Ident, Ident),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
