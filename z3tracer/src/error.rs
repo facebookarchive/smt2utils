@@ -3,6 +3,7 @@
 
 use crate::syntax::{Equality, Ident};
 
+/// Raw error cases.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RawError {
     // Lexer
@@ -29,12 +30,15 @@ pub enum RawError {
 /// Record a position in the input stream.
 #[derive(Clone, Eq, PartialEq)]
 pub struct Position {
+    /// Optional path name for the input stream.
     pub path_name: Option<String>,
+    /// Line number in the input stream.
     pub line: usize,
+    /// Column number in the line.
     pub column: usize,
 }
 
-/// Similar to `RawError` but includes a position where the error occurred.
+/// An error together with a position where the error occurred.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Error {
     pub position: Position,

@@ -21,23 +21,27 @@ struct QIKey(u64);
 pub struct ModelConfig {
     /// Whether to log quantifier instantiations (QIs).
     #[structopt(long)]
-    qi_logs: bool,
+    pub display_qi_logs: bool,
 
     /// Whether to display variable instantiations in QIs
     #[structopt(long)]
-    with_qi_variables: bool,
+    pub with_qi_variables: bool,
 
     /// Whether to display triggers in QIs.
     #[structopt(long)]
-    with_qi_triggers: bool,
+    pub with_qi_triggers: bool,
 
     /// Whether to display terms produced by QIs.
     #[structopt(long)]
-    with_qi_produced_terms: bool,
+    pub with_qi_produced_terms: bool,
 
     /// Whether to display terms used by QIs.
     #[structopt(long)]
-    with_qi_used_terms: bool,
+    pub with_qi_used_terms: bool,
+
+    /// Whether to run consistency checks for identifiers, equations, etc.
+    #[structopt(long)]
+    pub skip_log_consistency_checks: bool,
 }
 
 /// Information on a term in the model.
@@ -71,6 +75,11 @@ impl Model {
             instantiations: BTreeMap::new(),
             current_instances: Vec::new(),
         }
+    }
+
+    #[inline]
+    fn has_log_consistency_checks(&self) -> bool {
+        !self.config.skip_log_consistency_checks
     }
 
     /// All terms in the model.
@@ -161,13 +170,6 @@ impl Model {
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
-                // println!(
-                //     "{} {:?}\n",
-                //     name,
-                //     args.iter().map(
-                //         |id| format!("{}", self.id_to_sexp(&BTreeMap::new(), id).unwrap())
-                //     ).collect::<Vec<_>>()
-                // );
                 let term = Term::Proof { name, args };
                 self.add_term(id, term)?;
                 Ok(true)
@@ -218,7 +220,9 @@ impl Model {
                 let inst = QuantInstantiation { kind, data: None };
                 // Ignore solver instances.
                 if !key.is_zero() {
-                    inst.visit(&mut |id| self.check_ident(id))?;
+                    if self.has_log_consistency_checks() {
+                        inst.visit(&mut |id| self.check_ident(id))?;
+                    }
                     self.instantiations.insert(key, inst);
                 }
                 Ok(true)
@@ -230,9 +234,11 @@ impl Model {
                 let terms = lexer.read_idents()?;
                 let used = lexer.read_matched_terms()?;
                 lexer.read_end_of_line()?;
-                for u in &used {
-                    if let MatchedTerm::Equality(id1, id2) = u {
-                        self.check_equality(id1, id2)?;
+                if self.has_log_consistency_checks() {
+                    for u in &used {
+                        if let MatchedTerm::Equality(id1, id2) = u {
+                            self.check_equality(id1, id2)?;
+                        }
                     }
                 }
                 let kind = QuantInstantiationKind::NewMatch {
@@ -253,7 +259,9 @@ impl Model {
                 let id = lexer.read_ident()?;
                 let eq = lexer.read_equality()?;
                 lexer.read_end_of_line()?;
-                eq.visit(&mut |id| self.check_ident(id))?;
+                if self.has_log_consistency_checks() {
+                    eq.visit(&mut |id| self.check_ident(id))?;
+                }
                 self.process_equality(&id, &eq)?;
                 Ok(true)
             }
@@ -301,7 +309,9 @@ impl Model {
                     .pop()
                     .ok_or(RawError::InvalidEndOfInstance)?;
                 // Ident check.
-                data.visit(&mut |id| self.check_ident(id))?;
+                if self.has_log_consistency_checks() {
+                    data.visit(&mut |id| self.check_ident(id))?;
+                }
                 // Ignore solver instances.
                 if !key.is_zero() {
                     let mut inst = self
@@ -312,7 +322,9 @@ impl Model {
                         return Err(RawError::InvalidEndOfInstance);
                     }
                     inst.data = Some(data);
-                    self.log_instance(key)?;
+                    if self.config.display_qi_logs {
+                        self.log_instance(key)?;
+                    }
                     Ok(true)
                 } else {
                     Ok(true)
@@ -334,15 +346,18 @@ impl Model {
             "[assign]" => {
                 let lit = lexer.read_literal()?;
                 lexer.read_line()?;
-                lit.visit(&mut |id| self.check_ident(id))?;
+                if self.has_log_consistency_checks() {
+                    lit.visit(&mut |id| self.check_ident(id))?;
+                }
                 self.term_data_mut(&lit.id)?.assignment = Some(lit.sign);
                 // ignored
                 Ok(true)
             }
             "[conflict]" => {
-                lexer
-                    .read_literals()?
-                    .visit(&mut |id| self.check_ident(id))?;
+                let lits = lexer.read_literals()?;
+                if self.has_log_consistency_checks() {
+                    lits.visit(&mut |id| self.check_ident(id))?;
+                }
                 lexer.read_line()?;
                 // ignored
                 Ok(true)
@@ -362,17 +377,19 @@ impl Model {
             }
             "[resolve-lit]" => {
                 lexer.read_integer()?;
-                lexer
-                    .read_literal()?
-                    .visit(&mut |id| self.check_ident(id))?;
+                let lit = lexer.read_literal()?;
+                if self.has_log_consistency_checks() {
+                    lit.visit(&mut |id| self.check_ident(id))?;
+                }
                 lexer.read_end_of_line()?;
                 // ignored
                 Ok(true)
             }
             "[resolve-process]" => {
-                lexer
-                    .read_literal()?
-                    .visit(&mut |id| self.check_ident(id))?;
+                let lit = lexer.read_literal()?;
+                if self.has_log_consistency_checks() {
+                    lit.visit(&mut |id| self.check_ident(id))?;
+                }
                 lexer.read_end_of_line()?;
                 // ignored
                 Ok(true)
@@ -457,9 +474,14 @@ impl Model {
                     }
                     if self.config.with_qi_produced_terms {
                         if let Some(data) = &inst.data {
-                            // Print produced terms (aka attached enodes).
-                            for e in &data.enodes {
-                                println!("  --> {}", self.id_to_sexp(&global_venv, e)?);
+                            // Print maximal produced terms (aka attached enodes).
+                            let mut subterms = BTreeSet::new();
+                            for e in data.enodes.iter().rev() {
+                                if !subterms.contains(e) {
+                                    let t = self.term(e)?;
+                                    self.append_term_subterms(&mut subterms, t)?;
+                                    println!("  --> {}", self.term_to_sexp(&global_venv, t)?);
+                                }
                             }
                         }
                     }
@@ -567,6 +589,15 @@ impl Model {
         }
     }
 
+    fn append_id_subterms(&self, deps: &mut BTreeSet<Ident>, id: &Ident) -> RawResult<()> {
+        deps.insert(id.clone());
+        self.append_term_subterms(deps, self.term(id)?)
+    }
+
+    fn append_term_subterms(&self, deps: &mut BTreeSet<Ident>, term: &Term) -> RawResult<()> {
+        term.visit(&mut |id| self.append_id_subterms(deps, id))
+    }
+
     fn check_ident(&self, id: &Ident) -> RawResult<()> {
         if self.terms.contains_key(id) || id.is_empty() {
             Ok(())
@@ -624,7 +655,9 @@ impl Model {
     }
 
     fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
-        term.visit(&mut |id| self.check_ident(id))?;
+        if self.has_log_consistency_checks() {
+            term.visit(&mut |id| self.check_ident(id))?;
+        }
         let data = TermData {
             term,
             eq_class: ident.clone(),
@@ -743,7 +776,9 @@ impl Model {
                 return Ok(());
             }
             Literal(eid, cid) => {
-                if !self.check_literal_equality(eid, id0, cid)? {
+                if self.has_log_consistency_checks()
+                    && !self.check_literal_equality(eid, id0, cid)?
+                {
                     return Err(RawError::CannotProcessEquality(id0.clone(), eq.clone()));
                 }
                 // Import dependencies from the equation term.
@@ -755,12 +790,13 @@ impl Model {
                 cid
             }
             Congruence(eqs, cid) => {
-                // Check congruence equalities.
-                for (id1, id2) in eqs {
-                    self.check_equality(id1, id2)?;
-                }
-                if !self.check_congruence_equality(eqs, id0, cid)? {
-                    return Err(RawError::CannotProcessEquality(id0.clone(), eq.clone()));
+                if self.has_log_consistency_checks() {
+                    for (id1, id2) in eqs {
+                        self.check_equality(id1, id2)?;
+                    }
+                    if !self.check_congruence_equality(eqs, id0, cid)? {
+                        return Err(RawError::CannotProcessEquality(id0.clone(), eq.clone()));
+                    }
                 }
                 cid
             }

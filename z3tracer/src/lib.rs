@@ -9,9 +9,11 @@
 
 #![forbid(unsafe_code)]
 
+/// Error management.
 pub mod error;
 mod lexer;
 mod model;
 mod syntax;
 
+pub use error::{Error, Result};
 pub use model::{Model, ModelConfig};

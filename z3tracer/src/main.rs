@@ -20,13 +20,15 @@ struct Options {
 }
 
 fn process_file(config: ModelConfig, path: PathBuf) -> std::io::Result<()> {
+    eprintln!("Processing {}", path.to_str().unwrap_or(""));
     let file = std::io::BufReader::new(std::fs::File::open(&path)?);
     let mut model = Model::new(config);
     if let Err(le) = model.process(path.to_str().map(String::from), file) {
         panic!("Error at {:?}: {:?}", le.position, le.error);
     }
-    println!("Terms: {}", model.count_terms());
-    println!("Instantiations: {}", model.count_instantiations());
+    eprintln!("Done processing {}", path.to_str().unwrap_or(""));
+    eprintln!("- Terms: {}", model.count_terms());
+    eprintln!("- Instantiations: {}", model.count_instantiations());
     Ok(())
 }
 
