@@ -84,6 +84,15 @@ pub enum QuantInstantiationKind {
     },
 }
 
+impl QuantInstantiationKind {
+    pub fn quantifier(&self) -> &Ident {
+        use QuantInstantiationKind::*;
+        match self {
+            Discovered { quantifier, .. } | NewMatch { quantifier, .. } => quantifier,
+        }
+    }
+}
+
 /// Quantifier instantiation (reminder).
 #[derive(Clone, Debug)]
 pub struct QuantInstantiationData {

@@ -14,7 +14,7 @@ use crate::syntax::{
 
 /// The hexadecimal index of a quantifier instantiation (QI).
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
-struct QIKey(u64);
+pub struct QIKey(pub u64);
 
 /// Configuration for the analysis of Z3 traces.
 #[derive(Debug, Default, Clone, StructOpt)]
@@ -46,11 +46,12 @@ pub struct ModelConfig {
 
 /// Information on a term in the model.
 #[derive(Debug)]
-struct TermData {
-    term: Term,
-    eq_class: Ident,
-    qi_dependencies: BTreeSet<QIKey>,
-    assignment: Option<bool>,
+pub struct TermData {
+    pub term: Term,
+    pub eq_class: Ident,
+    pub qi_dependencies: BTreeSet<QIKey>,
+    pub assignment: Option<bool>,
+    pub instantiations: Vec<QIKey>,
 }
 
 /// Main state of the Z3 tracer.
@@ -83,13 +84,13 @@ impl Model {
     }
 
     /// All terms in the model.
-    pub fn count_terms(&self) -> usize {
-        self.terms.len()
+    pub fn terms(&self) -> &BTreeMap<Ident, TermData> {
+        &self.terms
     }
 
     /// All instantiations in the model.
-    pub fn count_instantiations(&self) -> usize {
-        self.instantiations.len()
+    pub fn instantiations(&self) -> &BTreeMap<QIKey, QuantInstantiation> {
+        &self.instantiations
     }
 
     /// Process the Z3 tracing logs in the given input.
@@ -218,13 +219,7 @@ impl Model {
                     blame,
                 };
                 let inst = QuantInstantiation { kind, data: None };
-                // Ignore solver instances.
-                if !key.is_zero() {
-                    if self.has_log_consistency_checks() {
-                        inst.visit(&mut |id| self.check_ident(id))?;
-                    }
-                    self.instantiations.insert(key, inst);
-                }
+                self.add_instantiation(key, inst)?;
                 Ok(true)
             }
             "[new-match]" => {
@@ -248,20 +243,13 @@ impl Model {
                     used,
                 };
                 let inst = QuantInstantiation { kind, data: None };
-                // Ignore solver instances.
-                if !key.is_zero() {
-                    inst.visit(&mut |id| self.check_ident(id))?;
-                    self.instantiations.insert(key, inst);
-                }
+                self.add_instantiation(key, inst)?;
                 Ok(true)
             }
             "[eq-expl]" => {
                 let id = lexer.read_ident()?;
                 let eq = lexer.read_equality()?;
                 lexer.read_end_of_line()?;
-                if self.has_log_consistency_checks() {
-                    eq.visit(&mut |id| self.check_ident(id))?;
-                }
                 self.process_equality(&id, &eq)?;
                 Ok(true)
             }
@@ -654,6 +642,19 @@ impl Model {
             .collect())
     }
 
+    fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
+        // Ignore solver instances.
+        if !key.is_zero() {
+            if self.has_log_consistency_checks() {
+                inst.visit(&mut |id| self.check_ident(id))?;
+            }
+            let quantifier = inst.kind.quantifier();
+            self.term_data_mut(quantifier)?.instantiations.push(key);
+            self.instantiations.insert(key, inst);
+        }
+        Ok(())
+    }
+
     fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
         if self.has_log_consistency_checks() {
             term.visit(&mut |id| self.check_ident(id))?;
@@ -663,6 +664,7 @@ impl Model {
             eq_class: ident.clone(),
             qi_dependencies: BTreeSet::new(),
             assignment: None,
+            instantiations: Vec::new(),
         };
         self.terms.insert(ident, data);
         Ok(())
@@ -691,10 +693,10 @@ impl Model {
     fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> RawResult<bool> {
         // Normal case.
         if let Term::App { name, args, .. } = self.term(eid)? {
-            if name.as_str() == "=" && args.len() == 2 {
-                if &args[0] == id1 && &args[1] == id2 || &args[0] == id2 && &args[1] == id1 {
-                    return Ok(true);
-                }
+            if name.as_str() == "=" && args.len() == 2 && &args[0] == id1 && &args[1] == id2
+                || &args[0] == id2 && &args[1] == id1
+            {
+                return Ok(true);
             }
         }
         // Assigned term.
@@ -769,6 +771,9 @@ impl Model {
     fn process_equality(&mut self, id0: &Ident, eq: &Equality) -> RawResult<()> {
         use Equality::*;
 
+        if self.has_log_consistency_checks() {
+            eq.visit(&mut |id| self.check_ident(id))?;
+        }
         let id = self.get_equality_class(id0)?;
         let raw_cid = match eq {
             Root => {

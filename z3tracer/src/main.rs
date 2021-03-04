@@ -27,8 +27,8 @@ fn process_file(config: ModelConfig, path: PathBuf) -> std::io::Result<()> {
         panic!("Error at {:?}: {:?}", le.position, le.error);
     }
     eprintln!("Done processing {}", path.to_str().unwrap_or(""));
-    eprintln!("- Terms: {}", model.count_terms());
-    eprintln!("- Instantiations: {}", model.count_instantiations());
+    eprintln!("- Terms: {}", model.terms().len());
+    eprintln!("- Instantiations: {}", model.instantiations().len());
     Ok(())
 }
 
