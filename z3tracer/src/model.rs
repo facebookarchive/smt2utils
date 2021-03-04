@@ -14,7 +14,7 @@ use crate::syntax::{
 
 /// The hexadecimal index of a quantifier instantiation (QI).
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
-pub struct QIKey(pub u64);
+pub struct QIKey(u64);
 
 /// Configuration for the analysis of Z3 traces.
 #[derive(Debug, Default, Clone, StructOpt)]

@@ -67,7 +67,7 @@ pub struct VarName {
     pub sort: Symbol,
 }
 
-/// Quantifier instantiation (preambule).
+/// Quantifier instantiation (case-specific data).
 #[derive(Clone, Debug)]
 pub enum QuantInstantiationKind {
     Discovered {
@@ -85,6 +85,7 @@ pub enum QuantInstantiationKind {
 }
 
 impl QuantInstantiationKind {
+    /// Id of the quantifier term.
     pub fn quantifier(&self) -> &Ident {
         use QuantInstantiationKind::*;
         match self {
@@ -93,7 +94,7 @@ impl QuantInstantiationKind {
     }
 }
 
-/// Quantifier instantiation (reminder).
+/// Quantifier instantiation (shared data).
 #[derive(Clone, Debug)]
 pub struct QuantInstantiationData {
     pub generation: u64,
@@ -101,7 +102,7 @@ pub struct QuantInstantiationData {
     pub enodes: Vec<Ident>,
 }
 
-/// Quantifier instantiation (all parts).
+/// Quantifier instantiation.
 #[derive(Clone, Debug)]
 pub struct QuantInstantiation {
     pub kind: QuantInstantiationKind,

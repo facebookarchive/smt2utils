@@ -11,9 +11,12 @@
 
 /// Error management.
 pub mod error;
+/// Tokenization of Z3 logs.
 mod lexer;
-mod model;
-mod syntax;
+/// Main analyzer module.
+pub mod model;
+/// Terms and data structures found in Z3 logs.
+pub mod syntax;
 
 pub use error::{Error, Result};
 pub use model::{Model, ModelConfig};
