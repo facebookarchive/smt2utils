@@ -4,6 +4,20 @@
 //! This crate provides an experimental parser for Z3 tracing logs obtained by passing
 //! `trace=true proof=true`.
 //!
+//! ```
+//! # fn main() -> z3tracer::error::Result<()> {
+//! let mut model = z3tracer::Model::default();
+//! let input = br#"
+//! [mk-app] #0 a
+//! [mk-app] #1 + #0 #0
+//! [eof]
+//! "#;
+//! model.process(None, &input[1..])?;
+//! assert_eq!(model.terms().len(), 2);
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! More information about Z3 tracing logs can be found in the documentation of the
 //! project [Axiom Profiler](https://github.com/viperproject/axiom-profiler).
 
