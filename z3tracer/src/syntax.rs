@@ -16,6 +16,10 @@ pub struct Ident {
     pub version: usize,
 }
 
+/// The hexadecimal index of a quantifier instantiation (QI).
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
+pub struct QIKey(pub(crate) u64);
+
 /// Concrete representation of a term.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Term {
@@ -97,7 +101,7 @@ impl QuantInstantiationKind {
 /// Quantifier instantiation (shared data).
 #[derive(Clone, Debug)]
 pub struct QuantInstantiationData {
-    pub generation: u64,
+    pub generation: Option<u64>,
     pub term: Ident,
     pub enodes: Vec<Ident>,
 }
@@ -149,6 +153,12 @@ impl std::fmt::Debug for Ident {
             v => format!("!{}", v),
         };
         write!(f, "{}#{}{}", ns, id, version)
+    }
+}
+
+impl QIKey {
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
     }
 }
 

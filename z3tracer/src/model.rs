@@ -7,14 +7,11 @@ use structopt::StructOpt;
 
 use crate::error::{RawError, RawResult, Result};
 use crate::lexer::Lexer;
+use crate::parser::{LogVisitor, Parser};
 use crate::syntax::{
-    Equality, Ident, MatchedTerm, Meaning, QuantInstantiation, QuantInstantiationData,
-    QuantInstantiationKind, Term, Visitor,
+    Equality, Ident, Literal, MatchedTerm, Meaning, QIKey, QuantInstantiation,
+    QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
 };
-
-/// The hexadecimal index of a quantifier instantiation (QI).
-#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
-pub struct QIKey(u64);
 
 /// Configuration for the analysis of Z3 traces.
 #[derive(Debug, Default, Clone, StructOpt)]
@@ -78,9 +75,13 @@ impl Model {
         }
     }
 
-    #[inline]
-    fn has_log_consistency_checks(&self) -> bool {
-        !self.config.skip_log_consistency_checks
+    /// Process some input.
+    pub fn process<R>(&mut self, path_name: Option<String>, input: R) -> Result<()>
+    where
+        R: std::io::BufRead,
+    {
+        let lexer = Lexer::new(path_name, input);
+        Parser::new(lexer, self).parse()
     }
 
     /// All terms in the model.
@@ -93,396 +94,31 @@ impl Model {
         &self.instantiations
     }
 
-    /// Process the Z3 tracing logs in the given input.
-    pub fn process<R>(&mut self, path_name: Option<String>, input: R) -> Result<()>
-    where
-        R: std::io::BufRead,
-    {
-        let mut lexer = Lexer::new(path_name, input);
-        while self
-            .process_line(&mut lexer)
-            .map_err(|e| lexer.make_error(e))?
-        {}
-        Ok(())
+    /// Retrieve a particular term.
+    pub fn term(&self, id: &Ident) -> RawResult<&Term> {
+        let t = &self
+            .terms
+            .get(id)
+            .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?
+            .term;
+        Ok(t)
     }
 
-    /// Parse one line of the given input. Return the key of a QI that was produced, if any.
-    fn process_line<R>(&mut self, lexer: &mut Lexer<R>) -> RawResult<bool>
-    where
-        R: std::io::BufRead,
-    {
-        match lexer.read_string().unwrap().as_ref() {
-            "[mk-app]" => {
-                let id = lexer.read_fresh_ident()?;
-                let name = lexer.read_string()?;
-                let args = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
-                let term = Term::App {
-                    name,
-                    args,
-                    meaning: None,
-                };
-                self.add_term(id, term)?;
-                Ok(true)
-            }
-            "[mk-var]" => {
-                let id = lexer.read_fresh_ident()?;
-                let index = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
-                let term = Term::Var { index };
-                self.add_term(id, term)?;
-                Ok(true)
-            }
-            "[mk-quant]" => {
-                let id = lexer.read_fresh_ident()?;
-                let name = lexer.read_string()?;
-                let params = lexer.read_integer()? as usize;
-                let mut triggers = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
-                let body = triggers.pop().ok_or(RawError::MissingBody)?;
-                let term = Term::Quant {
-                    name,
-                    params,
-                    triggers,
-                    body,
-                    var_names: None,
-                };
-                self.add_term(id, term)?;
-                Ok(true)
-            }
-            "[mk-lambda]" => {
-                let id = lexer.read_fresh_ident()?;
-                let name = lexer.read_string()?;
-                let params = lexer.read_integer()?;
-                let mut triggers = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
-                let body = triggers.pop().ok_or(RawError::MissingBody)?;
-                let term = Term::Lambda {
-                    name,
-                    params,
-                    triggers,
-                    body,
-                };
-                self.add_term(id, term)?;
-                Ok(true)
-            }
-            "[mk-proof]" => {
-                let id = lexer.read_fresh_ident()?;
-                let name = lexer.read_string()?;
-                let args = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
-                let term = Term::Proof { name, args };
-                self.add_term(id, term)?;
-                Ok(true)
-            }
-            "[attach-meaning]" => {
-                let id = lexer.read_ident()?;
-                let theory = lexer.read_string()?;
-                let sexp = lexer.read_line()?;
-                match self.term_mut(&id)? {
-                    Term::App { meaning, .. } => {
-                        *meaning = Some(Meaning { theory, sexp });
-                    }
-                    _ => {
-                        return Err(RawError::CannotAttachMeaning(id));
-                    }
-                }
-                Ok(true)
-            }
-            "[attach-var-names]" => {
-                let id = lexer.read_ident()?;
-                let names = lexer.read_var_names()?;
-                lexer.read_end_of_line()?;
-                match self.term_mut(&id)? {
-                    Term::Quant {
-                        var_names, params, ..
-                    } if names.len() == *params => {
-                        *var_names = Some(names);
-                    }
-                    _ => {
-                        return Err(RawError::CannotAttachVarNames(id));
-                    }
-                }
-                Ok(true)
-            }
-            "[inst-discovered]" => {
-                let method = lexer.read_string()?;
-                let key = QIKey(lexer.read_key()?);
-                let quantifier = lexer.read_ident()?;
-                let terms = lexer.read_idents()?;
-                let blame = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
-                let kind = QuantInstantiationKind::Discovered {
-                    method,
-                    quantifier,
-                    terms,
-                    blame,
-                };
-                let inst = QuantInstantiation { kind, data: None };
-                self.add_instantiation(key, inst)?;
-                Ok(true)
-            }
-            "[new-match]" => {
-                let key = QIKey(lexer.read_key()?);
-                let quantifier = lexer.read_ident()?;
-                let trigger = lexer.read_ident()?;
-                let terms = lexer.read_idents()?;
-                let used = lexer.read_matched_terms()?;
-                lexer.read_end_of_line()?;
-                if self.has_log_consistency_checks() {
-                    for u in &used {
-                        if let MatchedTerm::Equality(id1, id2) = u {
-                            self.check_equality(id1, id2)?;
-                        }
-                    }
-                }
-                let kind = QuantInstantiationKind::NewMatch {
-                    quantifier,
-                    trigger,
-                    terms,
-                    used,
-                };
-                let inst = QuantInstantiation { kind, data: None };
-                self.add_instantiation(key, inst)?;
-                Ok(true)
-            }
-            "[eq-expl]" => {
-                let id = lexer.read_ident()?;
-                let eq = lexer.read_equality()?;
-                lexer.read_end_of_line()?;
-                self.process_equality(&id, &eq)?;
-                Ok(true)
-            }
-            "[instance]" => {
-                let key = QIKey(lexer.read_key()?);
-                let term = lexer.read_ident()?;
-                let generation = lexer.read_optional_integer()?.unwrap_or_else(|| {
-                    // Defaults to the same "generation" number as the outer instantiation, if any.
-                    self.current_instances
-                        .last()
-                        .map(|(_, data)| data.generation)
-                        .unwrap_or(0)
-                });
-                lexer.read_end_of_line()?;
-                self.add_qi_dependency(&term, key)?;
-                let data = QuantInstantiationData {
-                    generation,
-                    term,
-                    enodes: Vec::new(),
-                };
-                self.current_instances.push((key, data));
-                Ok(true)
-            }
-            "[attach-enode]" => {
-                let id = lexer.read_ident()?;
-                let generation = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
-                // Ignore commands outside of [instance]..[end-of-instance].
-                if !self.current_instances.is_empty() {
-                    let current_instance = self.current_instances.last_mut().unwrap();
-                    let key = current_instance.0;
-                    let data = &mut current_instance.1;
-                    if generation != data.generation {
-                        return Err(RawError::InvalidEnodeGeneration);
-                    }
-                    data.enodes.push(id.clone());
-                    self.add_qi_dependency(&id, key)?;
-                }
-                Ok(true)
-            }
-            "[end-of-instance]" => {
-                lexer.read_end_of_line()?;
-                let (key, data) = self
-                    .current_instances
-                    .pop()
-                    .ok_or(RawError::InvalidEndOfInstance)?;
-                // Ident check.
-                if self.has_log_consistency_checks() {
-                    data.visit(&mut |id| self.check_ident(id))?;
-                }
-                // Ignore solver instances.
-                if !key.is_zero() {
-                    let mut inst = self
-                        .instantiations
-                        .get_mut(&key)
-                        .ok_or(RawError::InvalidInstanceKey)?;
-                    if inst.data.is_some() {
-                        return Err(RawError::InvalidEndOfInstance);
-                    }
-                    inst.data = Some(data);
-                    if self.config.display_qi_logs {
-                        self.log_instance(key)?;
-                    }
-                    Ok(true)
-                } else {
-                    Ok(true)
-                }
-            }
-            "[tool-version]" => {
-                lexer.read_string()?;
-                lexer.read_string()?;
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[begin-check]" => {
-                lexer.read_integer()?;
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[assign]" => {
-                let lit = lexer.read_literal()?;
-                lexer.read_line()?;
-                if self.has_log_consistency_checks() {
-                    lit.visit(&mut |id| self.check_ident(id))?;
-                }
-                self.term_data_mut(&lit.id)?.assignment = Some(lit.sign);
-                // ignored
-                Ok(true)
-            }
-            "[conflict]" => {
-                let lits = lexer.read_literals()?;
-                if self.has_log_consistency_checks() {
-                    lits.visit(&mut |id| self.check_ident(id))?;
-                }
-                lexer.read_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[push]" => {
-                lexer.read_integer()?;
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[pop]" => {
-                lexer.read_integer()?;
-                lexer.read_integer()?;
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[resolve-lit]" => {
-                lexer.read_integer()?;
-                let lit = lexer.read_literal()?;
-                if self.has_log_consistency_checks() {
-                    lit.visit(&mut |id| self.check_ident(id))?;
-                }
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[resolve-process]" => {
-                let lit = lexer.read_literal()?;
-                if self.has_log_consistency_checks() {
-                    lit.visit(&mut |id| self.check_ident(id))?;
-                }
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(true)
-            }
-            "[eof]" => {
-                lexer.read_end_of_line()?;
-                // ignored
-                Ok(false)
-            }
-            s => Err(RawError::UnknownCommand(s.to_string())),
-        }
+    /// Retrieve a particular term, including metadata.
+    pub fn term_data(&self, id: &Ident) -> RawResult<&TermData> {
+        let t = self
+            .terms
+            .get(id)
+            .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?;
+        Ok(t)
     }
 
-    /// Print debug information about a quantifier instantiation.
-    fn log_instance(&self, key: QIKey) -> RawResult<()> {
-        let inst = self
-            .instantiations
-            .get(&key)
-            .ok_or(RawError::InvalidInstanceKey)?;
-        match &inst.kind {
-            QuantInstantiationKind::Discovered { .. } => (),
-            QuantInstantiationKind::NewMatch {
-                quantifier,
-                terms,
-                trigger,
-                used,
-            } => {
-                let quantifier = self.term(quantifier)?;
-                if let Term::Quant {
-                    name,
-                    var_names: Some(var_names),
-                    ..
-                } = quantifier
-                {
-                    // Bind variable names.
-                    let mut venv = BTreeMap::new();
-                    for (i, vn) in var_names.iter().enumerate() {
-                        venv.insert(i as u64, vn.name.clone());
-                    }
-                    if self.config.with_qi_triggers {
-                        // Trim the outer "pattern" application.
-                        let trigger = match self.term(trigger)? {
-                            Term::App { name, args, .. }
-                                if name == "pattern" && args.len() == 1 =>
-                            {
-                                &args[0]
-                            }
-                            _ => trigger,
-                        };
-                        println!("{} :: {{ {} }}", name, self.id_to_sexp(&venv, trigger)?);
-                    } else {
-                        println!("{}", name);
-                    }
-                    // Print instantiation terms.
-                    let global_venv = BTreeMap::new();
-                    if self.config.with_qi_variables {
-                        for (i, vn) in var_names.iter().enumerate() {
-                            println!(
-                                "  {} <-- {}",
-                                vn.name.clone(),
-                                self.id_to_sexp(&global_venv, &terms[i])?
-                            );
-                        }
-                    }
-                    if self.config.with_qi_used_terms {
-                        // Print 'used' terms.
-                        for u in used {
-                            use MatchedTerm::*;
-                            match u {
-                                Trigger(id) => {
-                                    println!("  ! {}", self.id_to_sexp(&global_venv, id)?);
-                                }
-                                Equality(id1, id2) => {
-                                    println!(
-                                        "  !! {} == {}",
-                                        self.id_to_sexp(&global_venv, id1)?,
-                                        self.id_to_sexp(&global_venv, id2)?
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    if self.config.with_qi_produced_terms {
-                        if let Some(data) = &inst.data {
-                            // Print maximal produced terms (aka attached enodes).
-                            let mut subterms = BTreeSet::new();
-                            for e in data.enodes.iter().rev() {
-                                if !subterms.contains(e) {
-                                    let t = self.term(e)?;
-                                    self.append_term_subterms(&mut subterms, t)?;
-                                    println!("  --> {}", self.term_to_sexp(&global_venv, t)?);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
+    /// Display a term given by id.
     fn id_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, id: &Ident) -> RawResult<String> {
         self.term_to_sexp(venv, self.term(id)?)
     }
 
+    /// Display a term by id.
     fn term_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, term: &Term) -> RawResult<String> {
         use Term::*;
         match term {
@@ -586,6 +222,98 @@ impl Model {
         term.visit(&mut |id| self.append_id_subterms(deps, id))
     }
 
+    fn has_log_consistency_checks(&self) -> bool {
+        !self.config.skip_log_consistency_checks
+    }
+
+    /// Print debug information about a quantifier instantiation.
+    fn log_instance(&self, key: QIKey) -> RawResult<()> {
+        let inst = self
+            .instantiations
+            .get(&key)
+            .ok_or(RawError::InvalidInstanceKey)?;
+        match &inst.kind {
+            QuantInstantiationKind::Discovered { .. } => (),
+            QuantInstantiationKind::NewMatch {
+                quantifier,
+                terms,
+                trigger,
+                used,
+            } => {
+                let quantifier = self.term(quantifier)?;
+                if let Term::Quant {
+                    name,
+                    var_names: Some(var_names),
+                    ..
+                } = quantifier
+                {
+                    // Bind variable names.
+                    let mut venv = BTreeMap::new();
+                    for (i, vn) in var_names.iter().enumerate() {
+                        venv.insert(i as u64, vn.name.clone());
+                    }
+                    if self.config.with_qi_triggers {
+                        // Trim the outer "pattern" application.
+                        let trigger = match self.term(trigger)? {
+                            Term::App { name, args, .. }
+                                if name == "pattern" && args.len() == 1 =>
+                            {
+                                &args[0]
+                            }
+                            _ => trigger,
+                        };
+                        println!("{} :: {{ {} }}", name, self.id_to_sexp(&venv, trigger)?);
+                    } else {
+                        println!("{}", name);
+                    }
+                    // Print instantiation terms.
+                    let global_venv = BTreeMap::new();
+                    if self.config.with_qi_variables {
+                        for (i, vn) in var_names.iter().enumerate() {
+                            println!(
+                                "  {} <-- {}",
+                                vn.name.clone(),
+                                self.id_to_sexp(&global_venv, &terms[i])?
+                            );
+                        }
+                    }
+                    if self.config.with_qi_used_terms {
+                        // Print 'used' terms.
+                        for u in used {
+                            use MatchedTerm::*;
+                            match u {
+                                Trigger(id) => {
+                                    println!("  ! {}", self.id_to_sexp(&global_venv, id)?);
+                                }
+                                Equality(id1, id2) => {
+                                    println!(
+                                        "  !! {} == {}",
+                                        self.id_to_sexp(&global_venv, id1)?,
+                                        self.id_to_sexp(&global_venv, id2)?
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    if self.config.with_qi_produced_terms {
+                        if let Some(data) = &inst.data {
+                            // Print maximal produced terms (aka attached enodes).
+                            let mut subterms = BTreeSet::new();
+                            for e in data.enodes.iter().rev() {
+                                if !subterms.contains(e) {
+                                    let t = self.term(e)?;
+                                    self.append_term_subterms(&mut subterms, t)?;
+                                    println!("  --> {}", self.term_to_sexp(&global_venv, t)?);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn check_ident(&self, id: &Ident) -> RawResult<()> {
         if self.terms.contains_key(id) || id.is_empty() {
             Ok(())
@@ -594,29 +322,12 @@ impl Model {
         }
     }
 
-    fn term(&self, id: &Ident) -> RawResult<&Term> {
-        let t = &self
-            .terms
-            .get(id)
-            .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?
-            .term;
-        Ok(t)
-    }
-
     fn term_mut(&mut self, id: &Ident) -> RawResult<&mut Term> {
         let t = &mut self
             .terms
             .get_mut(id)
             .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?
             .term;
-        Ok(t)
-    }
-
-    fn term_data(&self, id: &Ident) -> RawResult<&TermData> {
-        let t = self
-            .terms
-            .get(id)
-            .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?;
         Ok(t)
     }
 
@@ -640,34 +351,6 @@ impl Model {
             .iter()
             .cloned()
             .collect())
-    }
-
-    fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
-        // Ignore solver instances.
-        if !key.is_zero() {
-            if self.has_log_consistency_checks() {
-                inst.visit(&mut |id| self.check_ident(id))?;
-            }
-            let quantifier = inst.kind.quantifier();
-            self.term_data_mut(quantifier)?.instantiations.push(key);
-            self.instantiations.insert(key, inst);
-        }
-        Ok(())
-    }
-
-    fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
-        if self.has_log_consistency_checks() {
-            term.visit(&mut |id| self.check_ident(id))?;
-        }
-        let data = TermData {
-            term,
-            eq_class: ident.clone(),
-            qi_dependencies: BTreeSet::new(),
-            assignment: None,
-            instantiations: Vec::new(),
-        };
-        self.terms.insert(ident, data);
-        Ok(())
     }
 
     fn get_equality_class(&mut self, id: &Ident) -> RawResult<Ident> {
@@ -768,23 +451,113 @@ impl Model {
         }
     }
 
-    fn process_equality(&mut self, id0: &Ident, eq: &Equality) -> RawResult<()> {
+    fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> RawResult<()> {
+        let c1 = self.get_equality_class(id1)?;
+        let c2 = self.get_equality_class(id2)?;
+        if c1 != c2 {
+            return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
+        }
+        Ok(())
+    }
+}
+
+impl LogVisitor for &mut Model {
+    fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            term.visit(&mut |id| self.check_ident(id))?;
+        }
+        let data = TermData {
+            term,
+            eq_class: ident.clone(),
+            qi_dependencies: BTreeSet::new(),
+            assignment: None,
+            instantiations: Vec::new(),
+        };
+        self.terms.insert(ident, data);
+        Ok(())
+    }
+
+    fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            // Verify used equalities
+            if let QuantInstantiationKind::NewMatch { used, .. } = &inst.kind {
+                for u in used {
+                    if let MatchedTerm::Equality(id1, id2) = u {
+                        self.check_equality(id1, id2)?;
+                    }
+                }
+            }
+        }
+        // Ignore solver instances.
+        if !key.is_zero() {
+            if self.has_log_consistency_checks() {
+                inst.visit(&mut |id| self.check_ident(id))?;
+            }
+            let quantifier = inst.kind.quantifier();
+            self.term_data_mut(quantifier)?.instantiations.push(key);
+            self.instantiations.insert(key, inst);
+        }
+        Ok(())
+    }
+
+    fn start_instance(&mut self, key: QIKey, mut data: QuantInstantiationData) -> RawResult<()> {
+        if data.generation.is_none() {
+            // Set missing generation number.
+            let gen = self
+                .current_instances
+                .last()
+                .map(|(_, d)| d.generation)
+                .unwrap_or(Some(0));
+            data.generation = gen;
+        }
+        // Ident check.
+        if self.has_log_consistency_checks() {
+            data.visit(&mut |id| self.check_ident(id))?;
+        }
+        self.add_qi_dependency(&data.term, key)?;
+        self.current_instances.push((key, data));
+        Ok(())
+    }
+
+    fn end_instance(&mut self) -> RawResult<()> {
+        let (key, data) = self
+            .current_instances
+            .pop()
+            .ok_or(RawError::InvalidEndOfInstance)?;
+        // Ignore solver instances.
+        if !key.is_zero() {
+            let mut inst = self
+                .instantiations
+                .get_mut(&key)
+                .ok_or(RawError::InvalidInstanceKey)?;
+            if inst.data.is_some() {
+                return Err(RawError::InvalidEndOfInstance);
+            }
+            inst.data = Some(data);
+            if self.config.display_qi_logs {
+                self.log_instance(key)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn add_equality(&mut self, id0: Ident, eq: Equality) -> RawResult<()> {
         use Equality::*;
 
         if self.has_log_consistency_checks() {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
-        let id = self.get_equality_class(id0)?;
-        let raw_cid = match eq {
+        let id = self.get_equality_class(&id0)?;
+        let raw_cid = match &eq {
             Root => {
                 // id == *id0 is expected but not strictly guaranteed.
                 return Ok(());
             }
             Literal(eid, cid) => {
                 if self.has_log_consistency_checks()
-                    && !self.check_literal_equality(eid, id0, cid)?
+                    && !self.check_literal_equality(eid, &id0, cid)?
                 {
-                    return Err(RawError::CannotProcessEquality(id0.clone(), eq.clone()));
+                    return Err(RawError::CannotProcessEquality(id0, eq));
                 }
                 // Import dependencies from the equation term.
                 let deps = self.qi_dependencies(eid)?;
@@ -799,8 +572,8 @@ impl Model {
                     for (id1, id2) in eqs {
                         self.check_equality(id1, id2)?;
                     }
-                    if !self.check_congruence_equality(eqs, id0, cid)? {
-                        return Err(RawError::CannotProcessEquality(id0.clone(), eq.clone()));
+                    if !self.check_congruence_equality(eqs, &id0, cid)? {
+                        return Err(RawError::CannotProcessEquality(id0, eq));
                     }
                 }
                 cid
@@ -819,18 +592,87 @@ impl Model {
         Ok(())
     }
 
-    fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> RawResult<()> {
-        let c1 = self.get_equality_class(id1)?;
-        let c2 = self.get_equality_class(id2)?;
-        if c1 != c2 {
-            return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
+    fn attach_meaning(&mut self, id: Ident, m: Meaning) -> RawResult<()> {
+        match self.term_mut(&id)? {
+            Term::App { meaning, .. } => {
+                *meaning = Some(m);
+                Ok(())
+            }
+            _ => Err(RawError::CannotAttachMeaning(id)),
+        }
+    }
+
+    fn attach_var_names(&mut self, id: Ident, names: Vec<VarName>) -> RawResult<()> {
+        match self.term_mut(&id)? {
+            Term::Quant {
+                var_names, params, ..
+            } if names.len() == *params => {
+                *var_names = Some(names);
+            }
+            _ => {
+                return Err(RawError::CannotAttachVarNames(id));
+            }
         }
         Ok(())
     }
-}
 
-impl QIKey {
-    fn is_zero(&self) -> bool {
-        self.0 == 0
+    fn attach_enode(&mut self, id: Ident, generation: u64) -> RawResult<()> {
+        // Ignore commands outside of [instance]..[end-of-instance].
+        if !self.current_instances.is_empty() {
+            let current_instance = self.current_instances.last_mut().unwrap();
+            let key = current_instance.0;
+            let data = &mut current_instance.1;
+            if generation != data.generation.expect("Generation should be set") {
+                return Err(RawError::InvalidEnodeGeneration);
+            }
+            data.enodes.push(id.clone());
+            self.add_qi_dependency(&id, key)?;
+        }
+        Ok(())
+    }
+
+    fn tool_version(&mut self, _s1: String, _s2: String) -> RawResult<()> {
+        Ok(())
+    }
+
+    fn begin_check(&mut self, _i: u64) -> RawResult<()> {
+        Ok(())
+    }
+
+    fn assign(&mut self, lit: Literal, _s: String) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            lit.visit(&mut |id| self.check_ident(id))?;
+        }
+        self.term_data_mut(&lit.id)?.assignment = Some(lit.sign);
+        Ok(())
+    }
+
+    fn conflict(&mut self, lits: Vec<Literal>, _s: String) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            lits.visit(&mut |id| self.check_ident(id))?;
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, _i: u64) -> RawResult<()> {
+        Ok(())
+    }
+
+    fn pop(&mut self, _i: u64, _j: u64) -> RawResult<()> {
+        Ok(())
+    }
+
+    fn resolve_lit(&mut self, _i: u64, lit: Literal) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            lit.visit(&mut |id| self.check_ident(id))?;
+        }
+        Ok(())
+    }
+
+    fn resolve_process(&mut self, lit: Literal) -> RawResult<()> {
+        if self.has_log_consistency_checks() {
+            lit.visit(&mut |id| self.check_ident(id))?;
+        }
+        Ok(())
     }
 }

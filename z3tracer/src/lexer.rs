@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use crate::error::{Error, Position, RawError, RawResult};
-use crate::syntax::{Equality, Ident, Literal, MatchedTerm, VarName};
+use crate::syntax::{Equality, Ident, Literal, MatchedTerm, QIKey, VarName};
 use smt2parser::concrete::Symbol;
 
 use std::collections::BTreeMap;
@@ -173,10 +173,11 @@ where
         String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)
     }
 
-    pub(crate) fn read_key(&mut self) -> RawResult<u64> {
+    pub(crate) fn read_key(&mut self) -> RawResult<QIKey> {
         let word = self.read_word()?;
-        u64::from_str_radix(word.trim_start_matches("0x"), 16)
-            .map_err(|_| RawError::InvalidHexadecimal(word))
+        let x = u64::from_str_radix(word.trim_start_matches("0x"), 16)
+            .map_err(|_| RawError::InvalidHexadecimal(word))?;
+        Ok(QIKey(x))
     }
 
     pub(crate) fn read_integer(&mut self) -> RawResult<u64> {

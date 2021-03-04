@@ -15,6 +15,8 @@ pub mod error;
 mod lexer;
 /// Main analyzer module.
 pub mod model;
+/// Parsing of Z3 logs.
+pub mod parser;
 /// Terms and data structures found in Z3 logs.
 pub mod syntax;
 
