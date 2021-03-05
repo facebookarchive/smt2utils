@@ -90,6 +90,17 @@ pub enum QuantInstantiationKind {
     },
 }
 
+impl Term {
+    pub fn matches_equality(&self) -> Option<[Ident; 2]> {
+        match self {
+            Term::App { name, args, .. } if name.as_str() == "=" && args.len() == 2 => {
+                Some([args[0].clone(), args[1].clone()])
+            }
+            _ => None,
+        }
+    }
+}
+
 impl QuantInstantiationKind {
     /// Id of the quantifier term.
     pub fn quantifier(&self) -> &Ident {
