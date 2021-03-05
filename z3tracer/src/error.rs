@@ -15,6 +15,7 @@ pub enum RawError {
     // Parser
     MissingIdentifier,
     UndefinedIdent(Ident),
+    UnexpectedProofTerm(Ident),
     CannotAttachMeaning(Ident),
     CannotAttachVarNames(Ident),
     UnknownCommand(String),
