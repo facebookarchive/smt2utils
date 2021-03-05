@@ -44,11 +44,18 @@ pub struct ModelConfig {
 /// Information on a term in the model.
 #[derive(Debug, Clone)]
 pub struct TermData {
+    /// Term definition.
     pub term: Term,
+    /// Tentative root of the equality class (lazily updated).
     pub eq_class: Ident,
-    pub qi_dependencies: BTreeSet<QIKey>,
+    /// QIs that made this term an active "enode".
+    pub enode_qi_dependencies: BTreeSet<QIKey>,
+    /// Truth assignment, if any.
     pub assignment: Option<bool>,
+    /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QIKey>,
+    /// Known proofs of this term (applicable when `term` is a boolean formula).
+    pub proofs: Vec<Ident>,
 }
 
 /// Main state of the Z3 tracer.
@@ -342,6 +349,14 @@ impl Model {
         }
     }
 
+    fn check_ident_is_not_a_proof(&self, id: &Ident) -> RawResult<()> {
+        match self.term(id)? {
+            Term::Proof { .. } => Err(RawError::UnexpectedProofTerm(id.clone())),
+            Term::Lambda { body, .. } => self.check_ident_is_not_a_proof(body),
+            _ => Ok(()),
+        }
+    }
+
     fn term_mut(&mut self, id: &Ident) -> RawResult<&mut Term> {
         let t = &mut self
             .terms
@@ -359,37 +374,20 @@ impl Model {
         Ok(t)
     }
 
-    fn add_qi_dependency(&mut self, id: &Ident, key: QIKey) -> RawResult<()> {
-        self.term_data_mut(id)?.qi_dependencies.insert(key);
-        Ok(())
-    }
-
-    fn qi_dependencies(&mut self, id: &Ident) -> RawResult<Vec<QIKey>> {
-        Ok(self
-            .term_data(id)?
-            .qi_dependencies
-            .iter()
-            .cloned()
-            .collect())
-    }
-
     fn get_equality_class(&mut self, id: &Ident) -> RawResult<Ident> {
         let cid = self.term_data(id)?.eq_class.clone();
-        if cid == *id {
+        if &cid == id {
+            // id is a class root.
             return Ok(cid);
         }
         let new_cid = self.get_equality_class(&cid)?;
         if new_cid == cid {
-            // No change since last time.
+            // cid is still a class root.
             return Ok(cid);
         }
-        // Class was updated. We need to re-import dependencies from cid.
-        let deps = self.qi_dependencies(&cid)?;
+        // cid is no longer a root.
         let t = self.term_data_mut(id)?;
         t.eq_class = new_cid.clone();
-        for d in deps {
-            t.qi_dependencies.insert(d);
-        }
         Ok(new_cid)
     }
 
@@ -479,18 +477,20 @@ impl Model {
     }
 
     fn make_terms_equal(&mut self, id0: &Ident, id1: &Ident) -> RawResult<()> {
-        let id = self.get_equality_class(id0)?;
-        let cid = self.get_equality_class(id1)?;
-        if id != cid {
-            let deps = self.qi_dependencies(id1)?;
-            let t = self.term_data_mut(&id)?;
-            t.eq_class = cid.clone();
-            for d in deps {
-                t.qi_dependencies.insert(d);
+        let cid0 = self.get_equality_class(id0)?;
+        let cid1 = self.get_equality_class(id1)?;
+        use std::cmp::Ordering::*;
+        let (id0, cid0, id1, cid1) = match cid0.cmp(&cid1) {
+            Equal => {
+                return Ok(());
             }
-            // FIXME: set dependencies of terms between id0 and id??
-            println!("{:?} -> {:?} ==> {:?} <- {:?}", id0, id, cid, id1);
-        }
+            // Use the older term as class root.
+            Less => (id1, cid1, id0, cid0),
+            Greater => (id0, cid0, id1, cid1),
+        };
+        let t = self.term_data_mut(&cid0)?;
+        t.eq_class = cid1.clone();
+        println!("{:?} -> {:?} ==> {:?} <- {:?}", id0, cid0, cid1, id1);
         Ok(())
     }
 
@@ -510,16 +510,24 @@ impl LogVisitor for &mut Model {
             term.visit(&mut |id| self.check_ident(id))?;
         }
         if let Term::Proof { property, .. } = &term {
+            self.term_data_mut(property)?.proofs.push(ident.clone());
             if let Some([id1, id2]) = self.matches_equality_term(property)? {
+                // TODO: needed?
                 self.make_terms_equal(&id1, &id2)?;
             }
+        }
+        if self.has_log_consistency_checks()
+            && matches!(term, Term::App { .. } | Term::Quant { .. })
+        {
+            term.visit(&mut |id| self.check_ident_is_not_a_proof(id))?;
         }
         let data = TermData {
             term,
             eq_class: ident.clone(),
-            qi_dependencies: BTreeSet::new(),
+            enode_qi_dependencies: BTreeSet::new(),
             assignment: None,
             instantiations: Vec::new(),
+            proofs: Vec::new(),
         };
         self.terms.insert(ident, data);
         Ok(())
@@ -562,7 +570,7 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             data.visit(&mut |id| self.check_ident(id))?;
         }
-        self.add_qi_dependency(&data.term, key)?;
+        // TODO: should we record `key` as an enode-dependency of `&data.term`?
         self.current_instances.push((key, data));
         Ok(())
     }
@@ -605,12 +613,7 @@ impl LogVisitor for &mut Model {
                 {
                     return Err(RawError::CannotProcessEquality(id, eq));
                 }
-                // Import dependencies from the equation term.
-                let deps = self.qi_dependencies(eid)?;
-                let t = self.term_data_mut(&id)?;
-                for d in deps {
-                    t.qi_dependencies.insert(d);
-                }
+                // TODO: Import QI dependencies from the equation term.
                 cid
             }
             Congruence(eqs, cid) => {
@@ -663,7 +666,7 @@ impl LogVisitor for &mut Model {
                 return Err(RawError::InvalidEnodeGeneration);
             }
             data.enodes.push(id.clone());
-            self.add_qi_dependency(&id, key)?;
+            self.term_data_mut(&id)?.enode_qi_dependencies.insert(key);
         }
         Ok(())
     }
