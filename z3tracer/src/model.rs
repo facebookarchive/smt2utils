@@ -42,7 +42,7 @@ pub struct ModelConfig {
 }
 
 /// Information on a term in the model.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TermData {
     pub term: Term,
     pub eq_class: Ident,
