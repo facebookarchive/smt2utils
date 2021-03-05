@@ -217,13 +217,18 @@ impl Model {
                     patterns
                 ))
             }
-            Proof { name, args } => Ok(format!(
-                "(PROOF {} {})",
+            Proof {
+                name,
+                args,
+                property,
+            } => Ok(format!(
+                "(PROOF {} {} {})",
                 name,
                 args.iter()
                     .map(|id| self.id_to_sexp(venv, id))
                     .collect::<RawResult<Vec<_>>>()?
-                    .join(" ")
+                    .join(" "),
+                self.id_to_sexp(venv, property)?,
             )),
         }
     }
@@ -388,12 +393,19 @@ impl Model {
         Ok(new_cid)
     }
 
+    fn matches_equality_term(&self, id: &Ident) -> RawResult<Option<[Ident; 2]>> {
+        match self.term(id)? {
+            Term::App { name, args, .. } if name.as_str() == "=" && args.len() == 2 => {
+                Ok(Some([args[0].clone(), args[1].clone()]))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> RawResult<bool> {
         // Normal case.
-        if let Term::App { name, args, .. } = self.term(eid)? {
-            if name.as_str() == "=" && args.len() == 2 && &args[0] == id1 && &args[1] == id2
-                || &args[0] == id2 && &args[1] == id1
-            {
+        if let Some([eid1, eid2]) = self.matches_equality_term(eid)? {
+            if (&eid1 == id1 && &eid2 == id2) || (&eid1 == id2 && &eid2 == id1) {
                 return Ok(true);
             }
         }
@@ -466,6 +478,22 @@ impl Model {
         }
     }
 
+    fn make_terms_equal(&mut self, id0: &Ident, id1: &Ident) -> RawResult<()> {
+        let id = self.get_equality_class(id0)?;
+        let cid = self.get_equality_class(id1)?;
+        if id != cid {
+            let deps = self.qi_dependencies(id1)?;
+            let t = self.term_data_mut(&id)?;
+            t.eq_class = cid.clone();
+            for d in deps {
+                t.qi_dependencies.insert(d);
+            }
+            // FIXME: set dependencies of terms between id0 and id??
+            println!("{:?} -> {:?} ==> {:?} <- {:?}", id0, id, cid, id1);
+        }
+        Ok(())
+    }
+
     fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> RawResult<()> {
         let c1 = self.get_equality_class(id1)?;
         let c2 = self.get_equality_class(id2)?;
@@ -480,6 +508,11 @@ impl LogVisitor for &mut Model {
     fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
         if self.has_log_consistency_checks() {
             term.visit(&mut |id| self.check_ident(id))?;
+        }
+        if let Term::Proof { property, .. } = &term {
+            if let Some([id1, id2]) = self.matches_equality_term(property)? {
+                self.make_terms_equal(&id1, &id2)?;
+            }
         }
         let data = TermData {
             term,
@@ -556,23 +589,21 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn add_equality(&mut self, id0: Ident, eq: Equality) -> RawResult<()> {
+    fn add_equality(&mut self, id: Ident, eq: Equality) -> RawResult<()> {
         use Equality::*;
-
         if self.has_log_consistency_checks() {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
-        let id = self.get_equality_class(&id0)?;
-        let raw_cid = match &eq {
+        let cid = match &eq {
             Root => {
-                // id == *id0 is expected but not strictly guaranteed.
+                // Empirically, `id` is not always a root in our state.
                 return Ok(());
             }
             Literal(eid, cid) => {
                 if self.has_log_consistency_checks()
-                    && !self.check_literal_equality(eid, &id0, cid)?
+                    && !self.check_literal_equality(eid, &id, cid)?
                 {
-                    return Err(RawError::CannotProcessEquality(id0, eq));
+                    return Err(RawError::CannotProcessEquality(id, eq));
                 }
                 // Import dependencies from the equation term.
                 let deps = self.qi_dependencies(eid)?;
@@ -587,24 +618,15 @@ impl LogVisitor for &mut Model {
                     for (id1, id2) in eqs {
                         self.check_equality(id1, id2)?;
                     }
-                    if !self.check_congruence_equality(eqs, &id0, cid)? {
-                        return Err(RawError::CannotProcessEquality(id0, eq));
+                    if !self.check_congruence_equality(eqs, &id, cid)? {
+                        return Err(RawError::CannotProcessEquality(id, eq));
                     }
                 }
                 cid
             }
             Theory(_, cid) => cid,
         };
-        // Import class and dependencies from raw_cid.
-        let cid = self.get_equality_class(raw_cid)?;
-        let deps = self.qi_dependencies(raw_cid)?;
-
-        let t = self.term_data_mut(&id)?;
-        t.eq_class = cid;
-        for d in deps {
-            t.qi_dependencies.insert(d);
-        }
-        Ok(())
+        self.make_terms_equal(&id, cid)
     }
 
     fn attach_meaning(&mut self, id: Ident, m: Meaning) -> RawResult<()> {

@@ -106,7 +106,7 @@ where
                 let params = lexer.read_integer()? as usize;
                 let mut triggers = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
-                let body = triggers.pop().ok_or(RawError::MissingBody)?;
+                let body = triggers.pop().ok_or(RawError::MissingIdentifier)?;
                 let term = Term::Quant {
                     name,
                     params,
@@ -123,7 +123,7 @@ where
                 let params = lexer.read_integer()?;
                 let mut triggers = lexer.read_idents()?;
                 lexer.read_end_of_line()?;
-                let body = triggers.pop().ok_or(RawError::MissingBody)?;
+                let body = triggers.pop().ok_or(RawError::MissingIdentifier)?;
                 let term = Term::Lambda {
                     name,
                     params,
@@ -136,9 +136,14 @@ where
             "[mk-proof]" => {
                 let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
-                let args = lexer.read_idents()?;
+                let mut args = lexer.read_idents()?;
+                let property = args.pop().ok_or(RawError::MissingIdentifier)?;
                 lexer.read_end_of_line()?;
-                let term = Term::Proof { name, args };
+                let term = Term::Proof {
+                    name,
+                    args,
+                    property,
+                };
                 state.add_term(id, term)?;
                 Ok(true)
             }

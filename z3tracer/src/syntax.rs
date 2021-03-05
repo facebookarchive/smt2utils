@@ -48,6 +48,7 @@ pub enum Term {
     Proof {
         name: String,
         args: Vec<Ident>,
+        property: Ident,
     },
 }
 
