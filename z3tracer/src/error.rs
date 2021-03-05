@@ -16,6 +16,7 @@ pub enum RawError {
     MissingIdentifier,
     UndefinedIdent(Ident),
     UnexpectedProofTerm(Ident),
+    MissingProof(Ident),
     CannotAttachMeaning(Ident),
     CannotAttachVarNames(Ident),
     UnknownCommand(String),

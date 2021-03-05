@@ -391,26 +391,20 @@ impl Model {
         Ok(new_cid)
     }
 
-    fn matches_equality_term(&self, id: &Ident) -> RawResult<Option<[Ident; 2]>> {
-        match self.term(id)? {
-            Term::App { name, args, .. } if name.as_str() == "=" && args.len() == 2 => {
-                Ok(Some([args[0].clone(), args[1].clone()]))
-            }
-            _ => Ok(None),
-        }
-    }
-
     fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> RawResult<bool> {
+        let data = self.term_data(eid)?;
         // Normal case.
-        if let Some([eid1, eid2]) = self.matches_equality_term(eid)? {
+        if let Some([eid1, eid2]) = data.term.matches_equality() {
+            if data.proofs.is_empty() && data.assignment != Some(true) {
+                return Err(RawError::MissingProof(eid.clone()));
+            }
             if (&eid1 == id1 && &eid2 == id2) || (&eid1 == id2 && &eid2 == id1) {
                 return Ok(true);
             }
         }
         // Assigned term.
         if eid == id1 {
-            let t = self.term_data(eid)?;
-            match (t.assignment, self.term(id2)?) {
+            match (data.assignment, self.term(id2)?) {
                 (Some(b), Term::App { name, args, .. })
                     if args.is_empty() && name.as_str() == if b { "true" } else { "false" } =>
                 {
@@ -510,8 +504,9 @@ impl LogVisitor for &mut Model {
             term.visit(&mut |id| self.check_ident(id))?;
         }
         if let Term::Proof { property, .. } = &term {
-            self.term_data_mut(property)?.proofs.push(ident.clone());
-            if let Some([id1, id2]) = self.matches_equality_term(property)? {
+            let data = self.term_data_mut(property)?;
+            data.proofs.push(ident.clone());
+            if let Some([id1, id2]) = data.term.matches_equality() {
                 // TODO: needed?
                 self.make_terms_equal(&id1, &id2)?;
             }
