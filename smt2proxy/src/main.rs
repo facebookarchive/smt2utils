@@ -115,7 +115,7 @@ where
             let line = line.expect(error_msg);
             if let Some(logger) = &logger {
                 let mut f = logger.lock().unwrap();
-                writeln!(f, "{}", line).expect("Failed to write to log file");
+                writeln!(f, ";; {}", line).expect("Failed to write to log file");
             }
             if repeat {
                 println!("{}", line);
