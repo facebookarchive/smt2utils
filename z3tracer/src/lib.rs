@@ -5,8 +5,11 @@
 //! `trace=true proof=true`.
 //!
 //! ```
-//! # fn main() -> z3tracer::error::Result<()> {
-//! let mut model = z3tracer::Model::default();
+//! # use std::str::FromStr;
+//! # use std::collections::BTreeMap;
+//! use z3tracer::{Model, syntax::{Ident, Term}};
+//! # fn main() -> z3tracer::error::RawResult<()> {
+//! let mut model = Model::default();
 //! let input = br#"
 //! [mk-app] #0 a
 //! [mk-app] #1 + #0 #0
@@ -14,6 +17,8 @@
 //! "#;
 //! model.process(None, &input[1..])?;
 //! assert_eq!(model.terms().len(), 2);
+//! assert!(matches!(model.term(&Ident::from_str("#1")?)?, Term::App { .. }));
+//! assert_eq!(model.id_to_sexp(&BTreeMap::new(), &Ident::from_str("#1").unwrap()).unwrap(), "(+ a a)");
 //! # Ok(())
 //! # }
 //! ```

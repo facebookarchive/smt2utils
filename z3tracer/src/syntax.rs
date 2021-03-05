@@ -1,6 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::error::{Error, RawError};
 use smt2parser::concrete::Symbol;
 
 /// An identifier such as `#45` or `foo#23`.
@@ -315,5 +316,36 @@ where
     fn visit(&'a self, f: &mut F) -> Result<(), E> {
         self.term.visit(f)?;
         self.enodes.visit(f)
+    }
+}
+
+impl std::str::FromStr for Ident {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self, Error> {
+        match value.find('!') {
+            None => {
+                let mut lexer = crate::lexer::Lexer::new(None, value.as_ref());
+                lexer.read_ident().map_err(|e| lexer.make_error(e))
+            }
+            Some(pos) => {
+                // The extended syntax `foo#4!7` is meant to be used for testing and debugging.
+                let mut lexer = crate::lexer::Lexer::new(None, &value.as_bytes()[0..pos]);
+                let mut id = lexer.read_ident().map_err(|e| lexer.make_error(e))?;
+                id.version = value[pos + 1..]
+                    .parse()
+                    .map_err(|e| lexer.make_error(RawError::InvalidInteger(e)))?;
+                Ok(id)
+            }
+        }
+    }
+}
+
+impl std::str::FromStr for VarName {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self, Error> {
+        let mut lexer = crate::lexer::Lexer::new(None, value.as_ref());
+        lexer.read_var_name().map_err(|e| lexer.make_error(e))
     }
 }

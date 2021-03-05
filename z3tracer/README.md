@@ -9,7 +9,8 @@ This crate provides an experimental parser for Z3 tracing logs obtained by passi
 `trace=true proof=true`.
 
 ```rust
-let mut model = z3tracer::Model::default();
+use z3tracer::{Model, syntax::{Ident, Term}};
+let mut model = Model::default();
 let input = br#"
 [mk-app] #0 a
 [mk-app] #1 + #0 #0
@@ -17,6 +18,8 @@ let input = br#"
 "#;
 model.process(None, &input[1..])?;
 assert_eq!(model.terms().len(), 2);
+assert!(matches!(model.term(&Ident::from_str("#1")?)?, Term::App { .. }));
+assert_eq!(model.id_to_sexp(&BTreeMap::new(), &Ident::from_str("#1").unwrap()).unwrap(), "(+ a a)");
 ```
 
 More information about Z3 tracing logs can be found in the documentation of the
