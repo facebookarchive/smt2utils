@@ -13,6 +13,7 @@ pub enum RawError {
     UnexpectedChar(Option<u8>, Vec<u8>),
     UnexpectedWord(String, Vec<&'static str>),
     // Parser
+    MissingIdentifier,
     UndefinedIdent(Ident),
     CannotAttachMeaning(Ident),
     CannotAttachVarNames(Ident),
@@ -20,7 +21,6 @@ pub enum RawError {
     InvalidEndOfInstance,
     InvalidInstanceKey,
     InvalidMatchKey,
-    MissingBody,
     InvalidEnodeGeneration,
     CannotAttachEnode(usize, usize),
     CannotProcessEquality(Ident, Equality),
