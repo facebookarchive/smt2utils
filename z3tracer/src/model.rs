@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use smt2parser::concrete::Symbol;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use structopt::StructOpt;
 
 use crate::error::{RawError, RawResult, Result};
@@ -94,6 +94,21 @@ impl Model {
         &self.instantiations
     }
 
+    /// Construct a max-heap of the (most) instantiated quantified terms.
+    pub fn most_instantiated_terms(&self) -> BinaryHeap<(usize, Ident)> {
+        self.terms
+            .iter()
+            .filter_map(|(id, term)| {
+                let c = term.instantiations.len();
+                if c > 0 {
+                    Some((c, id.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Retrieve a particular term.
     pub fn term(&self, id: &Ident) -> RawResult<&Term> {
         let t = &self
@@ -114,12 +129,12 @@ impl Model {
     }
 
     /// Display a term given by id.
-    fn id_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, id: &Ident) -> RawResult<String> {
+    pub fn id_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, id: &Ident) -> RawResult<String> {
         self.term_to_sexp(venv, self.term(id)?)
     }
 
     /// Display a term by id.
-    fn term_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, term: &Term) -> RawResult<String> {
+    pub fn term_to_sexp(&self, venv: &BTreeMap<u64, Symbol>, term: &Term) -> RawResult<String> {
         use Term::*;
         match term {
             App {

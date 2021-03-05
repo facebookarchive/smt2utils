@@ -409,26 +409,6 @@ where
     }
 }
 
-#[cfg(test)]
-impl std::str::FromStr for Ident {
-    type Err = RawError;
-
-    fn from_str(value: &str) -> RawResult<Self> {
-        let mut line = Lexer::new(None, value.as_ref());
-        line.read_ident()
-    }
-}
-
-#[cfg(test)]
-impl std::str::FromStr for VarName {
-    type Err = RawError;
-
-    fn from_str(value: &str) -> RawResult<Self> {
-        let mut line = Lexer::new(None, value.as_ref());
-        line.read_var_name()
-    }
-}
-
 #[test]
 fn test_ident_from_str() {
     use std::str::FromStr;

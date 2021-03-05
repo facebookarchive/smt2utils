@@ -60,3 +60,9 @@ impl std::fmt::Debug for Position {
         write!(f, "{}{}:{}", file, self.line + 1, self.column + 1)
     }
 }
+
+impl From<Error> for RawError {
+    fn from(value: Error) -> Self {
+        value.error
+    }
+}
