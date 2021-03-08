@@ -46,8 +46,6 @@ pub struct ModelConfig {
 pub struct TermData {
     /// Term definition.
     pub term: Term,
-    /// Tentative root of the equality class (lazily updated).
-    pub eq_class: Ident,
     /// QIs that made this term an active "enode".
     pub enode_qi_dependencies: BTreeSet<QIKey>,
     /// Truth assignment, if any.
@@ -374,23 +372,6 @@ impl Model {
         Ok(t)
     }
 
-    fn get_equality_class(&mut self, id: &Ident) -> RawResult<Ident> {
-        let cid = self.term_data(id)?.eq_class.clone();
-        if &cid == id {
-            // id is a class root.
-            return Ok(cid);
-        }
-        let new_cid = self.get_equality_class(&cid)?;
-        if new_cid == cid {
-            // cid is still a class root.
-            return Ok(cid);
-        }
-        // cid is no longer a root.
-        let t = self.term_data_mut(id)?;
-        t.eq_class = new_cid.clone();
-        Ok(new_cid)
-    }
-
     fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> RawResult<bool> {
         let data = self.term_data(eid)?;
         // Normal case.
@@ -469,33 +450,6 @@ impl Model {
             _ => Ok(false),
         }
     }
-
-    fn make_terms_equal(&mut self, id0: &Ident, id1: &Ident) -> RawResult<()> {
-        let cid0 = self.get_equality_class(id0)?;
-        let cid1 = self.get_equality_class(id1)?;
-        use std::cmp::Ordering::*;
-        let (id0, cid0, id1, cid1) = match cid0.cmp(&cid1) {
-            Equal => {
-                return Ok(());
-            }
-            // Use the older term as class root.
-            Less => (id1, cid1, id0, cid0),
-            Greater => (id0, cid0, id1, cid1),
-        };
-        let t = self.term_data_mut(&cid0)?;
-        t.eq_class = cid1.clone();
-        println!("{:?} -> {:?} ==> {:?} <- {:?}", id0, cid0, cid1, id1);
-        Ok(())
-    }
-
-    fn check_equality(&mut self, id1: &Ident, id2: &Ident) -> RawResult<()> {
-        let c1 = self.get_equality_class(id1)?;
-        let c2 = self.get_equality_class(id2)?;
-        if c1 != c2 {
-            return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
-        }
-        Ok(())
-    }
 }
 
 impl LogVisitor for &mut Model {
@@ -506,10 +460,6 @@ impl LogVisitor for &mut Model {
         if let Term::Proof { property, .. } = &term {
             let data = self.term_data_mut(property)?;
             data.proofs.push(ident.clone());
-            if let Some([id1, id2]) = data.term.matches_equality() {
-                // TODO: needed?
-                self.make_terms_equal(&id1, &id2)?;
-            }
         }
         if self.has_log_consistency_checks()
             && matches!(term, Term::App { .. } | Term::Quant { .. })
@@ -518,7 +468,6 @@ impl LogVisitor for &mut Model {
         }
         let data = TermData {
             term,
-            eq_class: ident.clone(),
             enode_qi_dependencies: BTreeSet::new(),
             assignment: None,
             instantiations: Vec::new(),
@@ -529,16 +478,6 @@ impl LogVisitor for &mut Model {
     }
 
     fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
-        if self.has_log_consistency_checks() {
-            // Verify used equalities
-            if let QuantInstantiationKind::NewMatch { used, .. } = &inst.kind {
-                for u in used {
-                    if let MatchedTerm::Equality(id1, id2) = u {
-                        self.check_equality(id1, id2)?;
-                    }
-                }
-            }
-        }
         // Ignore solver instances.
         if !key.is_zero() {
             if self.has_log_consistency_checks() {
@@ -597,7 +536,7 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
-        let cid = match &eq {
+        match &eq {
             Root => {
                 // Empirically, `id` is not always a root in our state.
                 return Ok(());
@@ -608,23 +547,17 @@ impl LogVisitor for &mut Model {
                 {
                     return Err(RawError::CannotProcessEquality(id, eq));
                 }
-                // TODO: Import QI dependencies from the equation term.
-                cid
             }
             Congruence(eqs, cid) => {
                 if self.has_log_consistency_checks() {
-                    for (id1, id2) in eqs {
-                        self.check_equality(id1, id2)?;
-                    }
                     if !self.check_congruence_equality(eqs, &id, cid)? {
                         return Err(RawError::CannotProcessEquality(id, eq));
                     }
                 }
-                cid
             }
-            Theory(_, cid) => cid,
+            Theory(_, _) => (),
         };
-        self.make_terms_equal(&id, cid)
+        Ok(())
     }
 
     fn attach_meaning(&mut self, id: Ident, m: Meaning) -> RawResult<()> {
