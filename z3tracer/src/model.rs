@@ -54,6 +54,9 @@ pub struct TermData {
     pub instantiations: Vec<QIKey>,
     /// Known proofs of this term (applicable when `term` is a boolean formula).
     pub proofs: Vec<Ident>,
+    /// Track the relative creation time of this term. Currently, this is the line
+    /// number in the Z3 log.
+    pub timestamp: usize,
 }
 
 /// Main state of the Z3 tracer.
@@ -67,6 +70,8 @@ pub struct Model {
     instantiations: BTreeMap<QIKey, QuantInstantiation>,
     // Stack of current quantifier instances.
     current_instances: Vec<(QIKey, QuantInstantiationData)>,
+    // Number of Z3 log callbacks already executed.
+    processed_logs: usize,
 }
 
 impl Model {
@@ -77,6 +82,7 @@ impl Model {
             terms: BTreeMap::new(),
             instantiations: BTreeMap::new(),
             current_instances: Vec::new(),
+            processed_logs: 0,
         }
     }
 
@@ -454,6 +460,7 @@ impl Model {
 
 impl LogVisitor for &mut Model {
     fn add_term(&mut self, ident: Ident, term: Term) -> RawResult<()> {
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             term.visit(&mut |id| self.check_ident(id))?;
         }
@@ -472,12 +479,14 @@ impl LogVisitor for &mut Model {
             assignment: None,
             instantiations: Vec::new(),
             proofs: Vec::new(),
+            timestamp: self.processed_logs,
         };
         self.terms.insert(ident, data);
         Ok(())
     }
 
     fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
+        self.processed_logs += 1;
         // Ignore solver instances.
         if !key.is_zero() {
             if self.has_log_consistency_checks() {
@@ -491,6 +500,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn start_instance(&mut self, key: QIKey, mut data: QuantInstantiationData) -> RawResult<()> {
+        self.processed_logs += 1;
         if data.generation.is_none() {
             // Set missing generation number.
             let gen = self
@@ -510,6 +520,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn end_instance(&mut self) -> RawResult<()> {
+        self.processed_logs += 1;
         let (key, data) = self
             .current_instances
             .pop()
@@ -533,6 +544,8 @@ impl LogVisitor for &mut Model {
 
     fn add_equality(&mut self, id: Ident, eq: Equality) -> RawResult<()> {
         use Equality::*;
+
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
@@ -561,6 +574,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn attach_meaning(&mut self, id: Ident, m: Meaning) -> RawResult<()> {
+        self.processed_logs += 1;
         match self.term_mut(&id)? {
             Term::App { meaning, .. } => {
                 *meaning = Some(m);
@@ -571,6 +585,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn attach_var_names(&mut self, id: Ident, names: Vec<VarName>) -> RawResult<()> {
+        self.processed_logs += 1;
         match self.term_mut(&id)? {
             Term::Quant {
                 var_names, params, ..
@@ -585,6 +600,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn attach_enode(&mut self, id: Ident, generation: u64) -> RawResult<()> {
+        self.processed_logs += 1;
         // Ignore commands outside of [instance]..[end-of-instance].
         if !self.current_instances.is_empty() {
             let current_instance = self.current_instances.last_mut().unwrap();
@@ -600,14 +616,17 @@ impl LogVisitor for &mut Model {
     }
 
     fn tool_version(&mut self, _s1: String, _s2: String) -> RawResult<()> {
+        self.processed_logs += 1;
         Ok(())
     }
 
     fn begin_check(&mut self, _i: u64) -> RawResult<()> {
+        self.processed_logs += 1;
         Ok(())
     }
 
     fn assign(&mut self, lit: Literal, _s: String) -> RawResult<()> {
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             lit.visit(&mut |id| self.check_ident(id))?;
         }
@@ -616,6 +635,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn conflict(&mut self, lits: Vec<Literal>, _s: String) -> RawResult<()> {
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             lits.visit(&mut |id| self.check_ident(id))?;
         }
@@ -623,14 +643,17 @@ impl LogVisitor for &mut Model {
     }
 
     fn push(&mut self, _i: u64) -> RawResult<()> {
+        self.processed_logs += 1;
         Ok(())
     }
 
     fn pop(&mut self, _i: u64, _j: u64) -> RawResult<()> {
+        self.processed_logs += 1;
         Ok(())
     }
 
     fn resolve_lit(&mut self, _i: u64, lit: Literal) -> RawResult<()> {
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             lit.visit(&mut |id| self.check_ident(id))?;
         }
@@ -638,6 +661,7 @@ impl LogVisitor for &mut Model {
     }
 
     fn resolve_process(&mut self, lit: Literal) -> RawResult<()> {
+        self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             lit.visit(&mut |id| self.check_ident(id))?;
         }
