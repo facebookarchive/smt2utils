@@ -240,12 +240,12 @@ impl Model {
                 args,
                 property,
             } => Ok(format!(
-                "(PROOF {} {} {})",
+                "(PROOF {} {}{})",
                 name,
                 args.iter()
-                    .map(|id| self.id_to_sexp(venv, id))
+                    .map(|id| Ok(self.id_to_sexp(venv, id)? + " "))
                     .collect::<RawResult<Vec<_>>>()?
-                    .join(" "),
+                    .join(""),
                 self.id_to_sexp(venv, property)?,
             )),
         }
