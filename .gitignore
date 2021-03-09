@@ -4,3 +4,4 @@ __pycache__
 .class
 .o
 .idea
+.ipynb_checkpoints

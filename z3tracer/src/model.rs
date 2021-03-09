@@ -14,6 +14,7 @@ use crate::syntax::{
 };
 
 /// Configuration for the analysis of Z3 traces.
+#[doc(hidden)]
 #[derive(Debug, Default, Clone, StructOpt)]
 pub struct ModelConfig {
     /// Whether to log quantifier instantiations (QIs).
@@ -48,7 +49,7 @@ pub struct TermData {
     pub term: Term,
     /// QIs that made this term an active "enode".
     pub enode_qi_dependencies: BTreeSet<QIKey>,
-    /// Truth assignment, if any.
+    /// Last truth assignment, if any.
     pub assignment: Option<bool>,
     /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QIKey>,
@@ -76,6 +77,7 @@ pub struct Model {
 
 impl Model {
     /// Build a new Z3 tracer.
+    /// Experimental. Use `Model::default()` instead if possible.
     pub fn new(config: ModelConfig) -> Self {
         Self {
             config,
@@ -103,6 +105,11 @@ impl Model {
     /// All instantiations in the model.
     pub fn instantiations(&self) -> &BTreeMap<QIKey, QuantInstantiation> {
         &self.instantiations
+    }
+
+    /// Number of Z3 logs that were processed.
+    pub fn processed_logs(&self) -> usize {
+        self.processed_logs
     }
 
     /// Construct a max-heap of the (most) instantiated quantified terms.
@@ -382,7 +389,7 @@ impl Model {
         let data = self.term_data(eid)?;
         // Normal case.
         if let Some([eid1, eid2]) = data.term.matches_equality() {
-            if data.proofs.is_empty() && data.assignment != Some(true) {
+            if data.proofs.is_empty() && data.assignment.is_none() {
                 return Err(RawError::MissingProof(eid.clone()));
             }
             if (&eid1 == id1 && &eid2 == id2) || (&eid1 == id2 && &eid2 == id1) {

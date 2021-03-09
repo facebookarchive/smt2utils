@@ -23,6 +23,8 @@
 //! # }
 //! ```
 //!
+//! See also in the [repository](https://github.com/facebookincubator/smt2utils/tree/master/z3tracer/notebooks) for more complex examples using Jupyter notebooks.
+//!
 //! More information about Z3 tracing logs can be found in the documentation of the
 //! project [Axiom Profiler](https://github.com/viperproject/axiom-profiler).
 
