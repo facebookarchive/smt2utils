@@ -22,6 +22,8 @@ assert!(matches!(model.term(&Ident::from_str("#1")?)?, Term::App { .. }));
 assert_eq!(model.id_to_sexp(&BTreeMap::new(), &Ident::from_str("#1").unwrap()).unwrap(), "(+ a a)");
 ```
 
+See also in the [repository](https://github.com/facebookincubator/smt2utils/tree/master/z3tracer/notebooks) for more complex examples using Jupyter notebooks.
+
 More information about Z3 tracing logs can be found in the documentation of the
 project [Axiom Profiler](https://github.com/viperproject/axiom-profiler).
 
