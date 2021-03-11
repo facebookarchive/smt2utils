@@ -33,7 +33,7 @@
 /// Error management.
 pub mod error;
 /// Tokenization of Z3 logs.
-mod lexer;
+pub mod lexer;
 /// Main analyzer module.
 pub mod model;
 /// Parsing of Z3 logs.
