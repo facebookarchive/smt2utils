@@ -569,10 +569,10 @@ impl LogVisitor for &mut Model {
                 }
             }
             Congruence(eqs, cid) => {
-                if self.has_log_consistency_checks() {
-                    if !self.check_congruence_equality(eqs, &id, cid)? {
-                        return Err(RawError::CannotProcessEquality(id, eq));
-                    }
+                if self.has_log_consistency_checks()
+                    && !self.check_congruence_equality(eqs, &id, cid)?
+                {
+                    return Err(RawError::CannotProcessEquality(id, eq));
                 }
             }
             Theory(_, _) => (),
