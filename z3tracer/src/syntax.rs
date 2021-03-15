@@ -19,19 +19,23 @@ pub struct Ident {
 
 /// The hexadecimal index of a quantifier instantiation (QI).
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
-pub struct QIKey(pub(crate) u64);
+pub struct QIKey {
+    pub key: u64,
+    pub version: usize,
+}
 
 /// Concrete representation of a term.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Term {
+    /// Application of a symbol on top of other term(s).
     App {
         name: String,
         args: Vec<Ident>,
         meaning: Option<Meaning>,
     },
-    Var {
-        index: u64,
-    },
+    /// Bound variable, used in the body a quantified expression or a lambda.
+    Var { index: u64 },
+    /// Quantified expression (either universal or existential).
     Quant {
         name: String,
         params: usize,
@@ -39,17 +43,21 @@ pub enum Term {
         body: Ident,
         var_names: Option<Vec<VarName>>,
     },
+    /// Lambda.
     Lambda {
         name: String,
         params: u64,
         triggers: Vec<Ident>,
         body: Ident,
     },
+    /// Proof term.
     Proof {
         name: String,
         args: Vec<Ident>,
         property: Ident,
     },
+    /// Builtin (typically used to refer to a theory or for true/false literals).
+    Builtin { name: Option<String> },
 }
 
 /// A literal (i.e. a signed identifier).
@@ -145,9 +153,9 @@ pub enum Equality {
 }
 
 impl Ident {
-    /// Whether an identifier is the special empty value.
-    pub fn is_empty(&self) -> bool {
-        self.namespace.is_none() && self.id.is_none()
+    /// Whether an identifier is the special builtin value.
+    pub fn is_builtin(&self) -> bool {
+        self.id.is_none()
     }
 }
 
@@ -166,12 +174,6 @@ impl std::fmt::Debug for Ident {
             v => format!("!{}", v),
         };
         write!(f, "{}#{}{}", ns, id, version)
-    }
-}
-
-impl QIKey {
-    pub fn is_zero(&self) -> bool {
-        self.0 == 0
     }
 }
 
@@ -251,6 +253,7 @@ where
                 f(body)
             }
             Proof { args, .. } => args.visit(f),
+            Builtin { .. } => Ok(()),
         }
     }
 }

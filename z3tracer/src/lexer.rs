@@ -14,6 +14,7 @@ pub struct Lexer<R> {
     current_line: usize,
     current_column: usize,
     ident_versions: BTreeMap<(Option<String>, Option<u64>), usize>,
+    key_versions: BTreeMap<u64, usize>,
 }
 
 impl<R> Lexer<R>
@@ -28,6 +29,7 @@ where
             current_line: 0,
             current_column: 0,
             ident_versions: BTreeMap::new(),
+            key_versions: BTreeMap::new(),
         }
     }
 
@@ -173,13 +175,6 @@ where
         String::from_utf8(bytes).map_err(RawError::InvalidUtf8String)
     }
 
-    pub(crate) fn read_key(&mut self) -> RawResult<QIKey> {
-        let word = self.read_word()?;
-        let x = u64::from_str_radix(word.trim_start_matches("0x"), 16)
-            .map_err(|_| RawError::InvalidHexadecimal(word))?;
-        Ok(QIKey(x))
-    }
-
     pub(crate) fn read_integer(&mut self) -> RawResult<u64> {
         let word = self.read_word()?;
         word.parse().map_err(RawError::InvalidInteger)
@@ -261,6 +256,20 @@ where
         }
     }
 
+    fn make_key(&mut self, key: u64, fresh: bool) -> QIKey {
+        let version = if fresh {
+            let e = self
+                .key_versions
+                .entry(key)
+                .and_modify(|e| *e += 1)
+                .or_insert(0);
+            *e
+        } else {
+            self.key_versions.get(&key).cloned().unwrap_or(0)
+        };
+        QIKey { key, version }
+    }
+
     fn read_ident_internal(&mut self, fresh: bool) -> RawResult<Ident> {
         let word1 = self.read_word()?;
         match self.peek_byte() {
@@ -291,6 +300,21 @@ where
 
     pub(crate) fn read_idents(&mut self) -> RawResult<Vec<Ident>> {
         self.read_sequence(Self::read_ident)
+    }
+
+    fn read_key_internal(&mut self, fresh: bool) -> RawResult<QIKey> {
+        let word = self.read_word()?;
+        let x = u64::from_str_radix(word.trim_start_matches("0x"), 16)
+            .map_err(|_| RawError::InvalidHexadecimal(word))?;
+        Ok(self.make_key(x, fresh))
+    }
+
+    pub(crate) fn read_key(&mut self) -> RawResult<QIKey> {
+        self.read_key_internal(false)
+    }
+
+    pub(crate) fn read_fresh_key(&mut self) -> RawResult<QIKey> {
+        self.read_key_internal(true)
     }
 
     pub(crate) fn read_var_name(&mut self) -> RawResult<VarName> {

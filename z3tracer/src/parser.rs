@@ -180,7 +180,7 @@ where
                 Ok(true)
             }
             "[new-match]" => {
-                let key = lexer.read_key()?;
+                let key = lexer.read_fresh_key()?;
                 let quantifier = lexer.read_ident()?;
                 let trigger = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
