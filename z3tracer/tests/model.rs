@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::collections::{BinaryHeap, BTreeMap};
+use std::collections::{BTreeMap, BinaryHeap};
 use std::str::FromStr;
 
 use z3tracer::syntax::Ident;
@@ -53,7 +53,7 @@ fn test_file1() -> std::io::Result<()> {
     assert_eq!(model.instantiations().len(), 21503);
     let top_instantiated = model.most_instantiated_terms();
     assert_eq!(top_instantiated.len(), 70);
-    let mut top_instantiated : IntoIterSorted<_> = top_instantiated.into();
+    let mut top_instantiated: IntoIterSorted<_> = top_instantiated.into();
     assert_eq!(
         top_instantiated.next().unwrap(),
         (7903, Ident::from_str("basic#").unwrap())
