@@ -248,6 +248,7 @@ impl Model {
                     .join(""),
                 self.id_to_sexp(venv, property)?,
             )),
+            Builtin { name } => Ok(name.clone().unwrap_or_else(String::new)),
         }
     }
 
@@ -353,7 +354,7 @@ impl Model {
     }
 
     fn check_ident(&self, id: &Ident) -> RawResult<()> {
-        if self.terms.contains_key(id) || id.is_empty() {
+        if self.terms.contains_key(id) || id.is_builtin() {
             Ok(())
         } else {
             Err(RawError::UndefinedIdent(id.clone()))
@@ -369,15 +370,26 @@ impl Model {
     }
 
     fn term_mut(&mut self, id: &Ident) -> RawResult<&mut Term> {
-        let t = &mut self
-            .terms
-            .get_mut(id)
-            .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?
-            .term;
+        let t = &mut self.term_data_mut(id)?.term;
         Ok(t)
     }
 
     fn term_data_mut(&mut self, id: &Ident) -> RawResult<&mut TermData> {
+        if id.is_builtin() {
+            // Builtins are added lazily
+            let timestamp = self.processed_logs;
+            let entry = self.terms.entry(id.clone()).or_insert_with(|| TermData {
+                term: Term::Builtin {
+                    name: id.namespace.clone(),
+                },
+                enode_qi_dependencies: BTreeSet::new(),
+                assignment: None,
+                instantiations: Vec::new(),
+                proofs: Vec::new(),
+                timestamp,
+            });
+            return Ok(&mut *entry);
+        }
         let t = self
             .terms
             .get_mut(id)
@@ -494,15 +506,12 @@ impl LogVisitor for &mut Model {
 
     fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
         self.processed_logs += 1;
-        // Ignore solver instances.
-        if !key.is_zero() {
-            if self.has_log_consistency_checks() {
-                inst.visit(&mut |id| self.check_ident(id))?;
-            }
-            let quantifier = inst.kind.quantifier();
-            self.term_data_mut(quantifier)?.instantiations.push(key);
-            self.instantiations.insert(key, inst);
+        if self.has_log_consistency_checks() {
+            inst.visit(&mut |id| self.check_ident(id))?;
         }
+        let quantifier = inst.kind.quantifier();
+        self.term_data_mut(quantifier)?.instantiations.push(key);
+        self.instantiations.insert(key, inst);
         Ok(())
     }
 
@@ -532,19 +541,16 @@ impl LogVisitor for &mut Model {
             .current_instances
             .pop()
             .ok_or(RawError::InvalidEndOfInstance)?;
-        // Ignore solver instances.
-        if !key.is_zero() {
-            let mut inst = self
-                .instantiations
-                .get_mut(&key)
-                .ok_or(RawError::InvalidInstanceKey)?;
-            if inst.data.is_some() {
-                return Err(RawError::InvalidEndOfInstance);
-            }
-            inst.data = Some(data);
-            if self.config.display_qi_logs {
-                self.log_instance(key)?;
-            }
+        let mut inst = self
+            .instantiations
+            .get_mut(&key)
+            .ok_or(RawError::InvalidInstanceKey)?;
+        if inst.data.is_some() {
+            return Err(RawError::InvalidEndOfInstance);
+        }
+        inst.data = Some(data);
+        if self.config.display_qi_logs {
+            self.log_instance(key)?;
         }
         Ok(())
     }
