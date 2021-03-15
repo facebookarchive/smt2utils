@@ -131,7 +131,7 @@ pub struct QuantInstantiationData {
 #[derive(Clone, Debug)]
 pub struct QuantInstantiation {
     pub kind: QuantInstantiationKind,
-    pub data: Option<QuantInstantiationData>,
+    pub data: Vec<QuantInstantiationData>,
 }
 
 /// Description of a term matching a trigger in `NewMatch`.

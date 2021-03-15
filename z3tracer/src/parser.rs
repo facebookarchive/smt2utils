@@ -175,7 +175,10 @@ where
                     terms,
                     blame,
                 };
-                let inst = QuantInstantiation { kind, data: None };
+                let inst = QuantInstantiation {
+                    kind,
+                    data: Vec::new(),
+                };
                 state.add_instantiation(key, inst)?;
                 lexer.read_end_of_line()?;
                 Ok(true)
@@ -192,7 +195,10 @@ where
                     terms,
                     used,
                 };
-                let inst = QuantInstantiation { kind, data: None };
+                let inst = QuantInstantiation {
+                    kind,
+                    data: Vec::new(),
+                };
                 state.add_instantiation(key, inst)?;
                 lexer.read_end_of_line()?;
                 Ok(true)
