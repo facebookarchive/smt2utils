@@ -99,6 +99,18 @@ pub enum QuantInstantiationKind {
 }
 
 impl Term {
+    pub fn name(&self) -> Option<&str> {
+        use Term::*;
+        match self {
+            App { name, .. }
+            | Quant { name, .. }
+            | Lambda { name, .. }
+            | Proof { name, .. }
+            | Builtin { name: Some(name) } => Some(name.as_str()),
+            Builtin { name: None } | Var { .. } => None,
+        }
+    }
+
     pub fn matches_equality(&self) -> Option<[Ident; 2]> {
         match self {
             Term::App { name, args, .. } if name.as_str() == "=" && args.len() == 2 => {
