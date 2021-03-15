@@ -83,21 +83,21 @@ where
                 let id = lexer.read_fresh_ident()?;
                 let name = lexer.read_string()?;
                 let args = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
                 let term = Term::App {
                     name,
                     args,
                     meaning: None,
                 };
                 state.add_term(id, term)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[mk-var]" => {
                 let id = lexer.read_fresh_ident()?;
                 let index = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
                 let term = Term::Var { index };
                 state.add_term(id, term)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[mk-quant]" => {
@@ -105,7 +105,6 @@ where
                 let name = lexer.read_string()?;
                 let params = lexer.read_integer()? as usize;
                 let mut triggers = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
                 let body = triggers.pop().ok_or(RawError::MissingIdentifier)?;
                 let term = Term::Quant {
                     name,
@@ -115,6 +114,7 @@ where
                     var_names: None,
                 };
                 state.add_term(id, term)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[mk-lambda]" => {
@@ -122,7 +122,6 @@ where
                 let name = lexer.read_string()?;
                 let params = lexer.read_integer()?;
                 let mut triggers = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
                 let body = triggers.pop().ok_or(RawError::MissingIdentifier)?;
                 let term = Term::Lambda {
                     name,
@@ -131,6 +130,7 @@ where
                     body,
                 };
                 state.add_term(id, term)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[mk-proof]" => {
@@ -138,13 +138,13 @@ where
                 let name = lexer.read_string()?;
                 let mut args = lexer.read_idents()?;
                 let property = args.pop().ok_or(RawError::MissingIdentifier)?;
-                lexer.read_end_of_line()?;
                 let term = Term::Proof {
                     name,
                     args,
                     property,
                 };
                 state.add_term(id, term)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[attach-meaning]" => {
@@ -153,22 +153,22 @@ where
                 let sexp = lexer.read_line()?;
                 let meaning = Meaning { theory, sexp };
                 state.attach_meaning(id, meaning)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[attach-var-names]" => {
                 let id = lexer.read_ident()?;
                 let names = lexer.read_var_names()?;
-                lexer.read_end_of_line()?;
                 state.attach_var_names(id, names)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[inst-discovered]" => {
                 let method = lexer.read_string()?;
-                let key = lexer.read_key()?;
+                let key = lexer.read_fresh_key()?;
                 let quantifier = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
                 let blame = lexer.read_idents()?;
-                lexer.read_end_of_line()?;
                 let kind = QuantInstantiationKind::Discovered {
                     method,
                     quantifier,
@@ -177,6 +177,7 @@ where
                 };
                 let inst = QuantInstantiation { kind, data: None };
                 state.add_instantiation(key, inst)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[new-match]" => {
@@ -185,7 +186,6 @@ where
                 let trigger = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
                 let used = lexer.read_matched_terms()?;
-                lexer.read_end_of_line()?;
                 let kind = QuantInstantiationKind::NewMatch {
                     quantifier,
                     trigger,
@@ -194,83 +194,86 @@ where
                 };
                 let inst = QuantInstantiation { kind, data: None };
                 state.add_instantiation(key, inst)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[eq-expl]" => {
                 let id = lexer.read_ident()?;
                 let eq = lexer.read_equality()?;
-                lexer.read_end_of_line()?;
                 state.add_equality(id, eq)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[instance]" => {
                 let key = lexer.read_key()?;
                 let term = lexer.read_ident()?;
                 let generation = lexer.read_optional_integer()?;
-                lexer.read_end_of_line()?;
                 let data = QuantInstantiationData {
                     generation,
                     term,
                     enodes: Vec::new(),
                 };
                 state.start_instance(key, data)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[attach-enode]" => {
                 let id = lexer.read_ident()?;
                 let generation = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
                 state.attach_enode(id, generation)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[end-of-instance]" => {
-                lexer.read_end_of_line()?;
                 state.end_instance()?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[tool-version]" => {
                 let s1 = lexer.read_string()?;
                 let s2 = lexer.read_string()?;
-                lexer.read_end_of_line()?;
                 state.tool_version(s1, s2)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[begin-check]" => {
                 let i = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
                 state.begin_check(i)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[assign]" => {
                 let lit = lexer.read_literal()?;
                 let s = lexer.read_line()?;
                 state.assign(lit, s)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[conflict]" => {
                 let lits = lexer.read_literals()?;
                 let s = lexer.read_line()?;
                 state.conflict(lits, s)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[push]" => {
                 let i = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
                 state.push(i)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[pop]" => {
                 let i = lexer.read_integer()?;
                 let j = lexer.read_integer()?;
-                lexer.read_end_of_line()?;
                 state.pop(i, j)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[resolve-lit]" => {
                 let i = lexer.read_integer()?;
                 let lit = lexer.read_literal()?;
-                lexer.read_end_of_line()?;
                 state.resolve_lit(i, lit)?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             "[resolve-process]" => {

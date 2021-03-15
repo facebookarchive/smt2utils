@@ -207,8 +207,6 @@ where
         let mut bytes = Vec::new();
         while let Some(c) = self.peek_byte() {
             if *c == b'\n' {
-                self.consume_byte();
-                self.skip_spaces();
                 break;
             }
             bytes.push(*c);
