@@ -270,21 +270,21 @@ where
 
     fn read_ident_internal(&mut self, fresh: bool) -> RawResult<Ident> {
         let word1 = self.read_word()?;
-        match self.peek_byte() {
-            Some(b'#') => {
-                self.consume_byte();
-                let word2 = self.read_word()?;
-                if word2.is_empty() {
-                    Ok(self.make_ident(Some(word1), None, fresh))
-                } else {
-                    let id = word2.parse().map_err(RawError::InvalidInteger)?;
-                    Ok(self.make_ident(Some(word1), Some(id), fresh))
-                }
+        match self.read_byte() {
+            Some(b'#') => (),
+            x => {
+                return Err(RawError::UnexpectedChar(x, vec![b'#']));
             }
-            _ => {
-                let id = word1.parse().map_err(RawError::InvalidInteger)?;
-                Ok(self.make_ident(None, Some(id), fresh))
-            }
+        }
+        let word2 = self.read_word()?;
+        if word1.is_empty() {
+            let id = word2.parse().map_err(RawError::InvalidInteger)?;
+            Ok(self.make_ident(None, Some(id), fresh))
+        } else if word2.is_empty() {
+            Ok(self.make_ident(Some(word1), None, fresh))
+        } else {
+            let id = word2.parse().map_err(RawError::InvalidInteger)?;
+            Ok(self.make_ident(Some(word1), Some(id), fresh))
         }
     }
 
@@ -435,7 +435,7 @@ where
 fn test_ident_from_str() {
     use std::str::FromStr;
     assert_eq!(
-        Ident::from_str("123").unwrap(),
+        Ident::from_str("#123").unwrap(),
         Ident {
             namespace: None,
             id: Some(123),
