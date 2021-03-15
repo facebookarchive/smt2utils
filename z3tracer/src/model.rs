@@ -335,7 +335,7 @@ impl Model {
                         }
                     }
                     if self.config.with_qi_produced_terms {
-                        if let Some(data) = &inst.data {
+                        for data in &inst.data {
                             // Print maximal produced terms (aka attached enodes).
                             let mut subterms = BTreeSet::new();
                             for e in data.enodes.iter().rev() {
@@ -541,14 +541,11 @@ impl LogVisitor for &mut Model {
             .current_instances
             .pop()
             .ok_or(RawError::InvalidEndOfInstance)?;
-        let mut inst = self
+        let inst = self
             .instantiations
             .get_mut(&key)
             .ok_or(RawError::InvalidInstanceKey)?;
-        if inst.data.is_some() {
-            return Err(RawError::InvalidEndOfInstance);
-        }
-        inst.data = Some(data);
+        inst.data.push(data);
         if self.config.display_qi_logs {
             self.log_instance(key)?;
         }
