@@ -212,7 +212,7 @@ where
             }
             "[instance]" => {
                 let key = lexer.read_key()?;
-                let term = lexer.read_ident()?;
+                let term = lexer.read_optional_ident()?;
                 let generation = lexer.read_optional_integer()?;
                 let data = QuantInstantiationData {
                     generation,

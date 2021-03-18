@@ -560,10 +560,7 @@ impl LogVisitor for &mut Model {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
         match &eq {
-            Root => {
-                // Empirically, `id` is not always a root in our state.
-                return Ok(());
-            }
+            Root => (),
             Literal(eid, cid) => {
                 if self.has_log_consistency_checks()
                     && !self.check_literal_equality(eid, &id, cid)?
@@ -579,7 +576,9 @@ impl LogVisitor for &mut Model {
                 }
             }
             Theory(_, _) => (),
-        };
+            Axiom(_) => (),
+            Unknown(_) => (),
+        }
         Ok(())
     }
 

@@ -135,7 +135,7 @@ impl QuantInstantiationKind {
 #[derive(Clone, Debug)]
 pub struct QuantInstantiationData {
     pub generation: Option<u64>,
-    pub term: Ident,
+    pub term: Option<Ident>,
     pub enodes: Vec<Ident>,
 }
 
@@ -162,6 +162,8 @@ pub enum Equality {
     Literal(Ident, Ident),
     Congruence(Vec<(Ident, Ident)>, Ident),
     Theory(String, Ident),
+    Axiom(Ident),
+    Unknown(Ident),
 }
 
 impl Ident {
@@ -331,7 +333,7 @@ where
                 ids.visit(f)?;
                 f(id)
             }
-            Theory(_, id) => f(id),
+            Theory(_, id) | Axiom(id) | Unknown(id) => f(id),
         }
     }
 }
