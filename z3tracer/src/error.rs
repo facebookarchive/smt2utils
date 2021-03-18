@@ -14,7 +14,7 @@ pub enum RawError {
     #[error("Invalid hexadecimal string {0}")]
     InvalidHexadecimal(String),
     #[error("Unexpected char {0:?} {1:?}")]
-    UnexpectedChar(Option<u8>, Vec<u8>),
+    UnexpectedChar(Option<char>, Vec<char>),
     #[error("Unexpected word {0} {1:?}")]
     UnexpectedWord(String, Vec<&'static str>),
     // Parser

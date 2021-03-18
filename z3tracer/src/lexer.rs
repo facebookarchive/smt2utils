@@ -98,7 +98,10 @@ where
                 self.skip_spaces();
                 Ok(())
             }
-            x => Err(RawError::UnexpectedChar(x, vec![token])),
+            x => Err(RawError::UnexpectedChar(
+                x.map(char::from),
+                vec![token as char],
+            )),
         }
     }
 
@@ -115,12 +118,12 @@ where
                     return Ok(Symbol(s));
                 }
                 if *c == b'\n' {
-                    return Err(RawError::UnexpectedChar(Some(*c), vec![b'|']));
+                    return Err(RawError::UnexpectedChar(Some(*c as char), vec!['|']));
                 }
                 bytes.push(*c);
                 self.consume_byte();
             }
-            return Err(RawError::UnexpectedChar(None, vec![b'|']));
+            return Err(RawError::UnexpectedChar(None, vec!['|']));
         }
         // Normal case
         while let Some(c) = self.peek_byte() {
@@ -191,6 +194,13 @@ where
         }
     }
 
+    pub(crate) fn read_optional_ident(&mut self) -> RawResult<Option<Ident>> {
+        match self.peek_byte() {
+            Some(b'#') => Ok(Some(self.read_ident()?)),
+            _ => Ok(None),
+        }
+    }
+
     pub(crate) fn read_end_of_line(&mut self) -> RawResult<()> {
         match self.peek_byte() {
             None => Ok(()),
@@ -199,7 +209,7 @@ where
                 self.skip_spaces();
                 Ok(())
             }
-            c => Err(RawError::UnexpectedChar(c.cloned(), vec![b'\n'])),
+            Some(c) => Err(RawError::UnexpectedChar(Some(*c as char), vec!['\n'])),
         }
     }
 
@@ -273,7 +283,7 @@ where
         match self.read_byte() {
             Some(b'#') => (),
             x => {
-                return Err(RawError::UnexpectedChar(x, vec![b'#']));
+                return Err(RawError::UnexpectedChar(x.map(char::from), vec!['#']));
             }
         }
         let word2 = self.read_word()?;
@@ -332,7 +342,10 @@ where
                 let sort = Symbol("".to_string());
                 Ok(VarName { name, sort })
             }
-            c => Err(RawError::UnexpectedChar(c.cloned(), vec![b';', b')'])),
+            x => Err(RawError::UnexpectedChar(
+                x.cloned().map(char::from),
+                vec![';', ')'],
+            )),
         }
     }
 
@@ -384,9 +397,19 @@ where
                 let t = self.read_ident()?;
                 Ok(Equality::Theory(solver, t))
             }
+            "ax" => {
+                self.read_token(b';')?;
+                let t = self.read_ident()?;
+                Ok(Equality::Axiom(t))
+            }
+            "unknown" => {
+                self.read_token(b';')?;
+                let t = self.read_ident()?;
+                Ok(Equality::Unknown(t))
+            }
             s => Err(RawError::UnexpectedWord(
                 s.to_string(),
-                vec!["root", "lit", "cg", "th"],
+                vec!["root", "lit", "cg", "th", "ax", "unknown"],
             )),
         }
     }

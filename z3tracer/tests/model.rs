@@ -76,8 +76,18 @@ fn test_file1() -> std::io::Result<()> {
 
 #[test]
 fn test_file2() -> std::io::Result<()> {
+    // Note: This file contains re-used QI keys.
     let model = process_file("tests/data/file2.log")?;
     assert_eq!(model.terms().len(), 150031);
     assert_eq!(model.instantiations().len(), 10242);
+    Ok(())
+}
+
+#[test]
+fn test_file3() -> std::io::Result<()> {
+    // Note: This file was generated with trace=true only.
+    let model = process_file("tests/data/file3.log")?;
+    assert_eq!(model.terms().len(), 37232);
+    assert_eq!(model.instantiations().len(), 11931);
     Ok(())
 }
