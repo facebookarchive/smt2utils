@@ -53,6 +53,9 @@ pub struct TermData {
     pub assignment: Option<bool>,
     /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QIKey>,
+    /// Number of instantiation entries, which might be different from instantiations.len()
+    /// since each key can map to multiple entries.
+    pub instantiation_data_len: usize,
     /// Known proofs of this term (applicable when `term` is a boolean formula).
     pub proofs: Vec<Ident>,
     /// Track the relative creation time of this term. Currently, this is the line
@@ -117,7 +120,7 @@ impl Model {
         self.terms
             .iter()
             .filter_map(|(id, term)| {
-                let c = term.instantiations.len();
+                let c = term.instantiation_data_len;
                 if c > 0 {
                     Some((c, id.clone()))
                 } else {
@@ -385,6 +388,7 @@ impl Model {
                 enode_qi_dependencies: BTreeSet::new(),
                 assignment: None,
                 instantiations: Vec::new(),
+                instantiation_data_len: 0,
                 proofs: Vec::new(),
                 timestamp,
             });
@@ -497,6 +501,7 @@ impl LogVisitor for &mut Model {
             enode_qi_dependencies: BTreeSet::new(),
             assignment: None,
             instantiations: Vec::new(),
+            instantiation_data_len: 0,
             proofs: Vec::new(),
             timestamp: self.processed_logs,
         };
@@ -546,6 +551,8 @@ impl LogVisitor for &mut Model {
             .get_mut(&key)
             .ok_or(RawError::InvalidInstanceKey)?;
         inst.data.push(data);
+        let quantifier = inst.kind.quantifier().clone();
+        self.term_data_mut(&quantifier)?.instantiation_data_len += 1;
         if self.config.display_qi_logs {
             self.log_instance(key)?;
         }

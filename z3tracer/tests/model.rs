@@ -52,7 +52,7 @@ fn test_file1() -> std::io::Result<()> {
     );
     assert_eq!(model.instantiations().len(), 21503);
     let top_instantiated = model.most_instantiated_terms();
-    assert_eq!(top_instantiated.len(), 70);
+    assert_eq!(top_instantiated.len(), 66);
     let mut top_instantiated: IntoIterSorted<_> = top_instantiated.into();
     assert_eq!(
         top_instantiated.next().unwrap(),
@@ -61,15 +61,15 @@ fn test_file1() -> std::io::Result<()> {
     let mut top_instantiated = top_instantiated.filter(|(_, id)| id.namespace.is_none());
     assert_eq!(
         top_instantiated.next().unwrap(),
-        (359, Ident::from_str("#4429!9").unwrap())
+        (331, Ident::from_str("#4429!9").unwrap())
     );
     assert_eq!(
         top_instantiated.next().unwrap(),
-        (359, Ident::from_str("#4328").unwrap())
+        (304, Ident::from_str("#4328").unwrap())
     );
     assert_eq!(
         top_instantiated.next().unwrap(),
-        (259, Ident::from_str("#23065!1").unwrap())
+        (224, Ident::from_str("#20151!10").unwrap())
     );
     Ok(())
 }
