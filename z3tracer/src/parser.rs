@@ -1,6 +1,8 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use structopt::StructOpt;
+
 use crate::error::{RawError, RawResult, Result};
 use crate::lexer::Lexer;
 use crate::syntax::{
@@ -8,8 +10,16 @@ use crate::syntax::{
     QuantInstantiationKind, Term, VarName,
 };
 
+#[derive(Debug, Default, Clone, StructOpt)]
+pub struct ParserConfig {
+    /// Whether to ignore lines which don't start with '['.
+    #[structopt(long)]
+    pub ignore_invalid_lines: bool,
+}
+
 /// Parser for Z3 traces.
 pub struct Parser<R, S> {
+    config: ParserConfig,
     lexer: Lexer<R>,
     state: S,
 }
@@ -50,8 +60,8 @@ pub trait LogVisitor {
 }
 
 impl<R, S> Parser<R, S> {
-    pub fn new(lexer: Lexer<R>, state: S) -> Self {
-        Self { lexer, state }
+    pub fn new(config: ParserConfig, lexer: Lexer<R>, state: S) -> Self {
+        Self { config, lexer, state }
     }
 
     pub fn state(&self) -> &S {
@@ -292,6 +302,10 @@ where
                 lexer.read_end_of_line()?;
                 Ok(false)
             }
+            s if self.config.ignore_invalid_lines && !s.starts_with("[") => {
+                // Ignore lines not starting with '['
+                Ok(true)
+            },
             s => Err(RawError::UnknownCommand(s.to_string())),
         }
     }
