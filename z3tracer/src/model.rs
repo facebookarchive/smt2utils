@@ -7,7 +7,7 @@ use structopt::StructOpt;
 
 use crate::error::{RawError, RawResult, Result};
 use crate::lexer::Lexer;
-use crate::parser::{LogVisitor, Parser};
+use crate::parser::{LogVisitor, Parser, ParserConfig};
 use crate::syntax::{
     Equality, Ident, Literal, MatchedTerm, Meaning, QIKey, QuantInstantiation,
     QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
@@ -96,8 +96,9 @@ impl Model {
     where
         R: std::io::BufRead,
     {
+        let parser_config = ParserConfig { ignore_invalid_lines: true };
         let lexer = Lexer::new(path_name, input);
-        Parser::new(lexer, self).parse()
+        Parser::new(parser_config, lexer, self).parse()
     }
 
     /// All terms in the model.
