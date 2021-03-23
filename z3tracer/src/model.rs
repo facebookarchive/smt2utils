@@ -53,13 +53,24 @@ pub struct TermData {
     pub assignment: Option<bool>,
     /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QIKey>,
-    /// Number of instantiation entries, which might be different from instantiations.len()
-    /// since each key can map to multiple entries.
-    pub instantiation_data_len: usize,
+    /// Timestamps (line numbers in Z3 logs) of instantiations.
+    pub instantiation_timestamps: Vec<usize>,
     /// Known proofs of this term (applicable when `term` is a boolean formula).
     pub proofs: Vec<Ident>,
     /// Track the relative creation time of this term. Currently, this is the line
     /// number in the Z3 log.
+    pub timestamp: usize,
+}
+
+/// Information on a quantifier instance.
+#[derive(Debug, Clone)]
+pub struct QuantInstanceData {
+    /// Hexadecimal key of the instantiation.
+    pub key: QIKey,
+    /// Quantifier instantiation data including optional term and ident.
+    pub data: QuantInstantiationData,
+    /// Timestamp of the QI. Right now this is the line number in the Z3 logs where
+    /// the instantiation occurs.
     pub timestamp: usize,
 }
 
@@ -73,7 +84,7 @@ pub struct Model {
     // Quantifier instantiations indexed by (hexadecimal) key.
     instantiations: BTreeMap<QIKey, QuantInstantiation>,
     // Stack of current quantifier instances.
-    current_instances: Vec<(QIKey, QuantInstantiationData)>,
+    current_instances: Vec<QuantInstanceData>,
     // Number of Z3 log callbacks already executed.
     processed_logs: usize,
 }
@@ -96,7 +107,9 @@ impl Model {
     where
         R: std::io::BufRead,
     {
-        let parser_config = ParserConfig { ignore_invalid_lines: true };
+        let parser_config = ParserConfig {
+            ignore_invalid_lines: true,
+        };
         let lexer = Lexer::new(path_name, input);
         Parser::new(parser_config, lexer, self).parse()
     }
@@ -121,7 +134,7 @@ impl Model {
         self.terms
             .iter()
             .filter_map(|(id, term)| {
-                let c = term.instantiation_data_len;
+                let c = term.instantiation_timestamps.len();
                 if c > 0 {
                     Some((c, id.clone()))
                 } else {
@@ -389,7 +402,7 @@ impl Model {
                 enode_qi_dependencies: BTreeSet::new(),
                 assignment: None,
                 instantiations: Vec::new(),
-                instantiation_data_len: 0,
+                instantiation_timestamps: Vec::new(),
                 proofs: Vec::new(),
                 timestamp,
             });
@@ -502,7 +515,7 @@ impl LogVisitor for &mut Model {
             enode_qi_dependencies: BTreeSet::new(),
             assignment: None,
             instantiations: Vec::new(),
-            instantiation_data_len: 0,
+            instantiation_timestamps: Vec::new(),
             proofs: Vec::new(),
             timestamp: self.processed_logs,
         };
@@ -528,7 +541,7 @@ impl LogVisitor for &mut Model {
             let gen = self
                 .current_instances
                 .last()
-                .map(|(_, d)| d.generation)
+                .map(|d| d.data.generation)
                 .unwrap_or(Some(0));
             data.generation = gen;
         }
@@ -537,13 +550,21 @@ impl LogVisitor for &mut Model {
             data.visit(&mut |id| self.check_ident(id))?;
         }
         // TODO: should we record `key` as an enode-dependency of `&data.term`?
-        self.current_instances.push((key, data));
+        self.current_instances.push(QuantInstanceData {
+            key,
+            data,
+            timestamp: self.processed_logs,
+        });
         Ok(())
     }
 
     fn end_instance(&mut self) -> RawResult<()> {
         self.processed_logs += 1;
-        let (key, data) = self
+        let QuantInstanceData {
+            key,
+            data,
+            timestamp,
+        } = self
             .current_instances
             .pop()
             .ok_or(RawError::InvalidEndOfInstance)?;
@@ -553,7 +574,9 @@ impl LogVisitor for &mut Model {
             .ok_or(RawError::InvalidInstanceKey)?;
         inst.data.push(data);
         let quantifier = inst.kind.quantifier().clone();
-        self.term_data_mut(&quantifier)?.instantiation_data_len += 1;
+        self.term_data_mut(&quantifier)?
+            .instantiation_timestamps
+            .push(timestamp);
         if self.config.display_qi_logs {
             self.log_instance(key)?;
         }
@@ -621,8 +644,8 @@ impl LogVisitor for &mut Model {
         // Ignore commands outside of [instance]..[end-of-instance].
         if !self.current_instances.is_empty() {
             let current_instance = self.current_instances.last_mut().unwrap();
-            let key = current_instance.0;
-            let data = &mut current_instance.1;
+            let key = current_instance.key;
+            let data = &mut current_instance.data;
             if generation != data.generation.expect("Generation should be set") {
                 return Err(RawError::InvalidEnodeGeneration);
             }

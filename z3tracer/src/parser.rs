@@ -61,7 +61,11 @@ pub trait LogVisitor {
 
 impl<R, S> Parser<R, S> {
     pub fn new(config: ParserConfig, lexer: Lexer<R>, state: S) -> Self {
-        Self { config, lexer, state }
+        Self {
+            config,
+            lexer,
+            state,
+        }
     }
 
     pub fn state(&self) -> &S {
@@ -305,7 +309,7 @@ where
             s if self.config.ignore_invalid_lines && !s.starts_with("[") => {
                 // Ignore lines not starting with '['
                 Ok(true)
-            },
+            }
             s => Err(RawError::UnknownCommand(s.to_string())),
         }
     }
