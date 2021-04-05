@@ -18,7 +18,7 @@ impl Position {
         Self { line, column }
     }
 
-    pub fn location_in_file(&self, path: &std::path::PathBuf) -> String {
+    pub fn location_in_file(&self, path: &std::path::Path) -> String {
         format!(
             "{}:{}:{}",
             path.to_string_lossy(),
