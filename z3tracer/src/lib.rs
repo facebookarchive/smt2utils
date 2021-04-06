@@ -4,6 +4,8 @@
 //! This crate provides an experimental parser for Z3 tracing logs obtained by passing
 //! `trace=true proof=true`.
 //!
+//! Currently, this library is only tested for Z3 v4.8.9
+//!
 //! ```
 //! # use std::str::FromStr;
 //! # use std::collections::BTreeMap;

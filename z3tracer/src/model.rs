@@ -655,7 +655,8 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn tool_version(&mut self, _s1: String, _s2: String) -> RawResult<()> {
+    fn tool_version(&mut self, s1: String, s2: String) -> RawResult<()> {
+        RawError::check_that_tool_version_is_supported(&s1, &s2)?;
         self.processed_logs += 1;
         Ok(())
     }
