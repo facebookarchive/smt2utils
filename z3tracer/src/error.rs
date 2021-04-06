@@ -6,6 +6,9 @@ use crate::syntax::{Equality, Ident};
 /// Raw error cases.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum RawError {
+    // General
+    #[error("{0} {1} is not supported")]
+    UnsupportedVersion(String, String),
     // Lexer
     #[error("Invalid UTF8 string {0}")]
     InvalidUtf8String(std::string::FromUtf8Error),
@@ -84,8 +87,27 @@ impl std::fmt::Debug for Position {
     }
 }
 
+const SUPPORTED_TOOL: &str = "Z3";
+const SUPPORTED_VERSIONS: &[&str] = &["4.8.9"];
+
+impl RawError {
+    pub fn check_that_tool_version_is_supported(s1: &str, s2: &str) -> RawResult<()> {
+        if s1 != SUPPORTED_TOOL || SUPPORTED_VERSIONS.iter().all(|x| s2 != *x) {
+            return Err(RawError::UnsupportedVersion(s1.to_string(), s2.to_string()));
+        }
+        Ok(())
+    }
+}
+
 impl From<Error> for RawError {
     fn from(value: Error) -> Self {
         value.error
     }
+}
+
+#[test]
+fn test_version_check() {
+    assert!(RawError::check_that_tool_version_is_supported("Z3", "4.8.9").is_ok());
+    assert!(RawError::check_that_tool_version_is_supported("Z4", "4.8.9").is_err());
+    assert!(RawError::check_that_tool_version_is_supported("Z3", "4.8.10").is_err());
 }
