@@ -41,8 +41,6 @@ pub enum RawError {
     InvalidInstanceKey,
     #[error("Invalid match key")]
     InvalidMatchKey,
-    #[error("Invalid enode generation")]
-    InvalidEnodeGeneration,
     #[error("Cannot enode {0} {1}")]
     CannotAttachEnode(usize, usize),
     #[error("Cannot process equality {0:?} {1:?}")]

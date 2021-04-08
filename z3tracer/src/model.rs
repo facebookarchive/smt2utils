@@ -534,22 +534,12 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn start_instance(&mut self, key: QIKey, mut data: QuantInstantiationData) -> RawResult<()> {
+    fn start_instance(&mut self, key: QIKey, data: QuantInstantiationData) -> RawResult<()> {
         self.processed_logs += 1;
-        if data.generation.is_none() {
-            // Set missing generation number.
-            let gen = self
-                .current_instances
-                .last()
-                .map(|d| d.data.generation)
-                .unwrap_or(Some(0));
-            data.generation = gen;
-        }
         // Ident check.
         if self.has_log_consistency_checks() {
             data.visit(&mut |id| self.check_ident(id))?;
         }
-        // TODO: should we record `key` as an enode-dependency of `&data.term`?
         self.current_instances.push(QuantInstanceData {
             key,
             data,
@@ -639,16 +629,13 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn attach_enode(&mut self, id: Ident, generation: u64) -> RawResult<()> {
+    fn attach_enode(&mut self, id: Ident, _generation: u64) -> RawResult<()> {
         self.processed_logs += 1;
         // Ignore commands outside of [instance]..[end-of-instance].
         if !self.current_instances.is_empty() {
             let current_instance = self.current_instances.last_mut().unwrap();
             let key = current_instance.key;
             let data = &mut current_instance.data;
-            if generation != data.generation.expect("Generation should be set") {
-                return Err(RawError::InvalidEnodeGeneration);
-            }
             data.enodes.push(id.clone());
             self.term_data_mut(&id)?.enode_qi_dependencies.insert(key);
         }
