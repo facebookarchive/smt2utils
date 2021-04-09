@@ -8,6 +8,8 @@
 This crate provides an experimental parser for Z3 tracing logs obtained by passing
 `trace=true proof=true`.
 
+Currently, this library only supports Z3 v4.8.9.
+
 ```rust
 use z3tracer::{Model, syntax::{Ident, Term}};
 let mut model = Model::default();
