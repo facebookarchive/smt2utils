@@ -185,7 +185,7 @@ pub enum Command {
     },
 }
 
-/// An implementation of [`SMT2Visitor`] that returns concrete syntax values.
+/// An implementation of [`Smt2Visitor`] that returns concrete syntax values.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct SyntaxBuilder;
 
