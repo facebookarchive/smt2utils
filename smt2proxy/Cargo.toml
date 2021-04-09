@@ -1,6 +1,6 @@
 [package]
 name = "smt2proxy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Binary tool to intercept and pre-process SMT2 commands"
 repository = "https://github.com/facebookincubator/smt2utils"
 documentation = "https://docs.rs/smt2proxy"
@@ -18,7 +18,7 @@ exclude = [
 [dependencies]
 rand = "0.8.0"
 structopt = "0.3.12"
-smt2parser = { path = "../smt2parser", version = "0.1.0" }
+smt2parser = { path = "../smt2parser", version = "0.2.0" }
 
 [[bin]]
 name = "smt2proxy"
