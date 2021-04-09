@@ -4,6 +4,7 @@
 //! The visiting traits expected by the SMT2 parser.
 
 use crate::{Binary, Decimal, Hexadecimal, Numeral};
+use serde::{Deserialize, Serialize};
 
 pub trait ConstantVisitor {
     type T;
@@ -36,13 +37,13 @@ pub trait SExprVisitor<Constant, Symbol, Keyword> {
     fn visit_application_s_expr(&mut self, values: Vec<Self::T>) -> Self::T;
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Index<Symbol> {
     Numeral(Numeral),
     Symbol(Symbol),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Identifier<Symbol> {
     Simple {
         symbol: Symbol,
@@ -71,7 +72,7 @@ pub trait QualIdentifierVisitor<Identifier, Sort> {
     fn visit_sorted_identifier(&mut self, identifier: Identifier, sort: Sort) -> Self::T;
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum AttributeValue<Constant, Symbol, SExpr> {
     None,
     Constant(Constant),
@@ -107,19 +108,19 @@ pub trait TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> {
     ) -> Self::T;
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub struct ConstructorDec<Symbol, Sort> {
     pub symbol: Symbol,
     pub selectors: Vec<(Symbol, Sort)>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub struct DatatypeDec<Symbol, Sort> {
     pub parameters: Vec<Symbol>,
     pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub struct FunctionDec<Symbol, Sort> {
     pub name: Symbol,
     pub parameters: Vec<(Symbol, Sort)>,

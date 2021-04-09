@@ -16,10 +16,11 @@ exclude = [
 ]
 
 [dependencies]
-num = "0.3.1"
-pomelo = "0.1.4"
+num = { version = "0.3.1", features = ["serde"] }
+pomelo = "0.1.5"
 structopt = "0.3.12"
 fst = "0.4.5"
+serde = { version = "1.0.125", features = ["derive"] }
 
 [[bin]]
 name = "smt2bin"
