@@ -11,9 +11,10 @@ use crate::{
     },
     Binary, Decimal, Hexadecimal, Numeral,
 };
+use serde::{Deserialize, Serialize};
 
 /// Concrete syntax for a constant.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Constant {
     Numeral(Numeral),
     Decimal(Decimal),
@@ -23,18 +24,18 @@ pub enum Constant {
 }
 
 /// Concrete symbol.
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Symbol(pub String);
 
 /// Concrete keyword.
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Keyword(pub String);
 
 /// Concrete identifier.
 pub type Identifier = crate::visitors::Identifier<Symbol>;
 
 /// Concrete syntax for an S-expression.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum SExpr {
     Constant(Constant),
     Symbol(Symbol),
@@ -50,7 +51,7 @@ pub type DatatypeDec = crate::visitors::DatatypeDec<Symbol, Sort>;
 pub type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
 
 /// Concrete syntax for a sort.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Sort {
     Simple {
         identifier: Identifier,
@@ -62,14 +63,14 @@ pub enum Sort {
 }
 
 /// Concrete syntax for a qualified-identifier.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum QualIdentifier {
     Simple { identifier: Identifier },
     Sorted { identifier: Identifier, sort: Sort },
 }
 
 /// Concrete syntax for a term.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Term {
     Constant(Constant),
     QualIdentifier(QualIdentifier),
@@ -100,7 +101,7 @@ pub enum Term {
 }
 
 /// Concrete syntax for a command.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Command {
     Assert {
         term: Term,
@@ -186,7 +187,7 @@ pub enum Command {
 }
 
 /// An implementation of [`Smt2Visitor`] that returns concrete syntax values.
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SyntaxBuilder;
 
 impl ConstantVisitor for SyntaxBuilder {
