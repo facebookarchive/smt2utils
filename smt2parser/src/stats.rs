@@ -11,7 +11,7 @@ use crate::{
     Binary, Decimal, Hexadecimal, Numeral,
 };
 
-/// An implementation of [`SMT2Visitor`] that returns simple
+/// An implementation of [`Smt2Visitor`] that returns simple
 /// statistics on the SMT2 inputs.
 #[derive(Clone, Eq, PartialEq, Default, Debug)]
 pub struct StatsHolder {

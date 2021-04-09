@@ -9,7 +9,7 @@ This crate provides a generic parser for SMT2 commands, as specified by the
 [SMT-LIB-2 standard](http://smtlib.cs.uiowa.edu/language.shtml).
 
 Commands are parsed and immediately visited by a user-provided
-implementation of the trait `visitors::SMT2Visitor`.
+implementation of the trait `visitors::Smt2Visitor`.
 
 To obtain concrete syntax values, use `concrete::SyntaxBuilder` as a
 visitor:
