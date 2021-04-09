@@ -6,7 +6,7 @@
 use crate::{
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        SMT2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral,
 };
@@ -256,7 +256,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for StatsHolde
     fn visit_set_option(&mut self, _keyword: Keyword, _value: AttributeValue) -> Self::T {}
 }
 
-impl SMT2Visitor for StatsHolder {
+impl Smt2Visitor for StatsHolder {
     type Constant = ();
     type QualIdentifier = ();
     type Keyword = ();

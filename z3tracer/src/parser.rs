@@ -6,7 +6,7 @@ use structopt::StructOpt;
 use crate::error::{RawError, RawResult, Result};
 use crate::lexer::Lexer;
 use crate::syntax::{
-    Equality, Ident, Literal, Meaning, QIKey, QuantInstantiation, QuantInstantiationData,
+    Equality, Ident, Literal, Meaning, QiKey, QuantInstantiation, QuantInstantiationData,
     QuantInstantiationKind, Term, VarName,
 };
 
@@ -28,9 +28,9 @@ pub struct Parser<R, S> {
 pub trait LogVisitor {
     fn add_term(&mut self, id: Ident, term: Term) -> RawResult<()>;
 
-    fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()>;
+    fn add_instantiation(&mut self, key: QiKey, inst: QuantInstantiation) -> RawResult<()>;
 
-    fn start_instance(&mut self, key: QIKey, data: QuantInstantiationData) -> RawResult<()>;
+    fn start_instance(&mut self, key: QiKey, data: QuantInstantiationData) -> RawResult<()>;
 
     fn end_instance(&mut self) -> RawResult<()>;
 

@@ -3,6 +3,7 @@
 
 #![allow(unused_braces)]
 #![allow(clippy::type_complexity)]
+#![allow(clippy::upper_case_acronyms)]
 
 pub use internal::{Parser, Token};
 
@@ -12,7 +13,7 @@ pomelo! {
 
     %stack_size 0;
 
-    %parser pub struct Parser<'a, T: visitors::SMT2Visitor> {};
+    %parser pub struct Parser<'a, T: visitors::Smt2Visitor> {};
     %extra_argument &'a mut T;
 
     %token #[derive(Clone, Debug, PartialEq, Eq)] pub enum Token {};

@@ -7,7 +7,7 @@ use crate::{
     lexer,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        SMT2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral,
 };
@@ -468,7 +468,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     }
 }
 
-impl SMT2Visitor for SyntaxBuilder {
+impl Smt2Visitor for SyntaxBuilder {
     type Constant = Constant;
     type QualIdentifier = QualIdentifier;
     type Keyword = Keyword;

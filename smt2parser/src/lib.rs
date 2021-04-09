@@ -53,7 +53,7 @@ pub use lexer::Position;
 pub struct CommandStream<R, T>
 where
     R: std::io::BufRead,
-    T: visitors::SMT2Visitor,
+    T: visitors::Smt2Visitor,
 {
     lexer: lexer::Lexer<R>,
     visitor: T,
@@ -62,7 +62,7 @@ where
 impl<R, T> CommandStream<R, T>
 where
     R: std::io::BufRead,
-    T: visitors::SMT2Visitor,
+    T: visitors::Smt2Visitor,
 {
     pub fn new(reader: R, visitor: T) -> Self {
         Self {
@@ -87,7 +87,7 @@ where
 impl<R, T> Iterator for CommandStream<R, T>
 where
     R: std::io::BufRead,
-    T: visitors::SMT2Visitor,
+    T: visitors::Smt2Visitor,
 {
     type Item = Result<T::Command, Position>;
 
