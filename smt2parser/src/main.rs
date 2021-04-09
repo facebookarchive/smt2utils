@@ -29,7 +29,7 @@ struct Options {
 
 fn process_file<T, F>(state: T, file_path: PathBuf, f: F) -> T
 where
-    T: smt2parser::visitors::SMT2Visitor,
+    T: smt2parser::visitors::Smt2Visitor,
     F: Fn(T::Command),
 {
     let file =

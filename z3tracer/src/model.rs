@@ -9,7 +9,7 @@ use crate::error::{RawError, RawResult, Result};
 use crate::lexer::Lexer;
 use crate::parser::{LogVisitor, Parser, ParserConfig};
 use crate::syntax::{
-    Equality, Ident, Literal, MatchedTerm, Meaning, QIKey, QuantInstantiation,
+    Equality, Ident, Literal, MatchedTerm, Meaning, QiKey, QuantInstantiation,
     QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
 };
 
@@ -48,11 +48,11 @@ pub struct TermData {
     /// Term definition.
     pub term: Term,
     /// QIs that made this term an active "enode".
-    pub enode_qi_dependencies: BTreeSet<QIKey>,
+    pub enode_qi_dependencies: BTreeSet<QiKey>,
     /// Last truth assignment, if any.
     pub assignment: Option<bool>,
     /// Known instantiations (applicable when `term` is a quantified expression).
-    pub instantiations: Vec<QIKey>,
+    pub instantiations: Vec<QiKey>,
     /// Timestamps (line numbers in Z3 logs) of instantiations.
     pub instantiation_timestamps: Vec<usize>,
     /// Known proofs of this term (applicable when `term` is a boolean formula).
@@ -66,7 +66,7 @@ pub struct TermData {
 #[derive(Debug, Clone)]
 pub struct QuantInstanceData {
     /// Hexadecimal key of the instantiation.
-    pub key: QIKey,
+    pub key: QiKey,
     /// Quantifier instantiation data including optional term and ident.
     pub data: QuantInstantiationData,
     /// Timestamp of the QI. Right now this is the line number in the Z3 logs where
@@ -82,7 +82,7 @@ pub struct Model {
     // Terms indexed by identifier.
     terms: BTreeMap<Ident, TermData>,
     // Quantifier instantiations indexed by (hexadecimal) key.
-    instantiations: BTreeMap<QIKey, QuantInstantiation>,
+    instantiations: BTreeMap<QiKey, QuantInstantiation>,
     // Stack of current quantifier instances.
     current_instances: Vec<QuantInstanceData>,
     // Number of Z3 log callbacks already executed.
@@ -120,7 +120,7 @@ impl Model {
     }
 
     /// All instantiations in the model.
-    pub fn instantiations(&self) -> &BTreeMap<QIKey, QuantInstantiation> {
+    pub fn instantiations(&self) -> &BTreeMap<QiKey, QuantInstantiation> {
         &self.instantiations
     }
 
@@ -283,7 +283,7 @@ impl Model {
     }
 
     /// Print debug information about a quantifier instantiation.
-    fn log_instance(&self, key: QIKey) -> RawResult<()> {
+    fn log_instance(&self, key: QiKey) -> RawResult<()> {
         let inst = self
             .instantiations
             .get(&key)
@@ -523,7 +523,7 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn add_instantiation(&mut self, key: QIKey, inst: QuantInstantiation) -> RawResult<()> {
+    fn add_instantiation(&mut self, key: QiKey, inst: QuantInstantiation) -> RawResult<()> {
         self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             inst.visit(&mut |id| self.check_ident(id))?;
@@ -534,7 +534,7 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn start_instance(&mut self, key: QIKey, data: QuantInstantiationData) -> RawResult<()> {
+    fn start_instance(&mut self, key: QiKey, data: QuantInstantiationData) -> RawResult<()> {
         self.processed_logs += 1;
         // Ident check.
         if self.has_log_consistency_checks() {

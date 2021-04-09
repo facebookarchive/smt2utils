@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use crate::error::{Error, Position, RawError, RawResult};
-use crate::syntax::{Equality, Ident, Literal, MatchedTerm, QIKey, VarName};
+use crate::syntax::{Equality, Ident, Literal, MatchedTerm, QiKey, VarName};
 use smt2parser::concrete::Symbol;
 
 use std::collections::BTreeMap;
@@ -264,7 +264,7 @@ where
         }
     }
 
-    fn make_key(&mut self, key: u64, fresh: bool) -> QIKey {
+    fn make_key(&mut self, key: u64, fresh: bool) -> QiKey {
         let version = if fresh {
             let e = self
                 .key_versions
@@ -275,7 +275,7 @@ where
         } else {
             self.key_versions.get(&key).cloned().unwrap_or(0)
         };
-        QIKey { key, version }
+        QiKey { key, version }
     }
 
     fn read_ident_internal(&mut self, fresh: bool) -> RawResult<Ident> {
@@ -310,18 +310,18 @@ where
         self.read_sequence(Self::read_ident)
     }
 
-    fn read_key_internal(&mut self, fresh: bool) -> RawResult<QIKey> {
+    fn read_key_internal(&mut self, fresh: bool) -> RawResult<QiKey> {
         let word = self.read_word()?;
         let x = u64::from_str_radix(word.trim_start_matches("0x"), 16)
             .map_err(|_| RawError::InvalidHexadecimal(word))?;
         Ok(self.make_key(x, fresh))
     }
 
-    pub(crate) fn read_key(&mut self) -> RawResult<QIKey> {
+    pub(crate) fn read_key(&mut self) -> RawResult<QiKey> {
         self.read_key_internal(false)
     }
 
-    pub(crate) fn read_fresh_key(&mut self) -> RawResult<QIKey> {
+    pub(crate) fn read_fresh_key(&mut self) -> RawResult<QiKey> {
         self.read_key_internal(true)
     }
 

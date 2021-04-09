@@ -207,36 +207,36 @@ pub trait CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> {
 }
 
 /// A visitor for the entire SMT2 syntax.
-pub trait SMT2Visitor:
-    ConstantVisitor<T = <Self as SMT2Visitor>::Constant>
-    + SymbolVisitor<T = <Self as SMT2Visitor>::Symbol>
-    + KeywordVisitor<T = <Self as SMT2Visitor>::Keyword>
+pub trait Smt2Visitor:
+    ConstantVisitor<T = <Self as Smt2Visitor>::Constant>
+    + SymbolVisitor<T = <Self as Smt2Visitor>::Symbol>
+    + KeywordVisitor<T = <Self as Smt2Visitor>::Keyword>
     + SExprVisitor<
-        <Self as SMT2Visitor>::Constant,
-        <Self as SMT2Visitor>::Symbol,
-        <Self as SMT2Visitor>::Keyword,
-        T = <Self as SMT2Visitor>::SExpr,
+        <Self as Smt2Visitor>::Constant,
+        <Self as Smt2Visitor>::Symbol,
+        <Self as Smt2Visitor>::Keyword,
+        T = <Self as Smt2Visitor>::SExpr,
     > + QualIdentifierVisitor<
-        Identifier<<Self as SMT2Visitor>::Symbol>,
-        <Self as SMT2Visitor>::Sort,
-        T = <Self as SMT2Visitor>::QualIdentifier,
-    > + SortVisitor<<Self as SMT2Visitor>::Symbol, T = <Self as SMT2Visitor>::Sort>
+        Identifier<<Self as Smt2Visitor>::Symbol>,
+        <Self as Smt2Visitor>::Sort,
+        T = <Self as Smt2Visitor>::QualIdentifier,
+    > + SortVisitor<<Self as Smt2Visitor>::Symbol, T = <Self as Smt2Visitor>::Sort>
     + TermVisitor<
-        <Self as SMT2Visitor>::Constant,
-        <Self as SMT2Visitor>::QualIdentifier,
-        <Self as SMT2Visitor>::Keyword,
-        <Self as SMT2Visitor>::SExpr,
-        <Self as SMT2Visitor>::Symbol,
-        <Self as SMT2Visitor>::Sort,
-        T = <Self as SMT2Visitor>::Term,
+        <Self as Smt2Visitor>::Constant,
+        <Self as Smt2Visitor>::QualIdentifier,
+        <Self as Smt2Visitor>::Keyword,
+        <Self as Smt2Visitor>::SExpr,
+        <Self as Smt2Visitor>::Symbol,
+        <Self as Smt2Visitor>::Sort,
+        T = <Self as Smt2Visitor>::Term,
     > + CommandVisitor<
-        <Self as SMT2Visitor>::Term,
-        <Self as SMT2Visitor>::Symbol,
-        <Self as SMT2Visitor>::Sort,
-        <Self as SMT2Visitor>::Keyword,
-        <Self as SMT2Visitor>::Constant,
-        <Self as SMT2Visitor>::SExpr,
-        T = <Self as SMT2Visitor>::Command,
+        <Self as Smt2Visitor>::Term,
+        <Self as Smt2Visitor>::Symbol,
+        <Self as Smt2Visitor>::Sort,
+        <Self as Smt2Visitor>::Keyword,
+        <Self as Smt2Visitor>::Constant,
+        <Self as Smt2Visitor>::SExpr,
+        T = <Self as Smt2Visitor>::Command,
     >
 {
     type Constant;
