@@ -8,8 +8,9 @@ use z3tracer::{Model, ModelConfig};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+/// Test utility for the parsing of Z3 log files.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "z3tracer", about = "Utility for Z3 tracing log files")]
+#[structopt(name = "z3tracer")]
 struct Options {
     #[structopt(flatten)]
     config: ModelConfig,

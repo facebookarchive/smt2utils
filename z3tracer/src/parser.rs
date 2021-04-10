@@ -10,11 +10,17 @@ use crate::syntax::{
     QuantInstantiationKind, Term, VarName,
 };
 
+// https://github.com/TeXitoi/structopt/issues/333
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(doc, doc = "Configuration for the parsing of Z3 traces.")]
 #[derive(Debug, Default, Clone, StructOpt)]
 pub struct ParserConfig {
     /// Whether to ignore lines which don't start with '['.
     #[structopt(long)]
     pub ignore_invalid_lines: bool,
+    /// Whether to skip the check for unsupported Z3 version.
+    #[structopt(long)]
+    pub skip_z3_version_check: bool,
 }
 
 /// Parser for Z3 traces.
@@ -252,6 +258,9 @@ where
             "[tool-version]" => {
                 let s1 = lexer.read_string()?;
                 let s2 = lexer.read_string()?;
+                if !self.config.skip_z3_version_check {
+                    RawError::check_that_tool_version_is_supported(&s1, &s2)?;
+                }
                 state.tool_version(s1, s2)?;
                 lexer.read_end_of_line()?;
                 Ok(true)

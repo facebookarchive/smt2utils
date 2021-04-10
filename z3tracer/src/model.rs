@@ -13,10 +13,14 @@ use crate::syntax::{
     QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
 };
 
-/// Configuration for the analysis of Z3 traces.
-#[doc(hidden)]
+// https://github.com/TeXitoi/structopt/issues/333
+#[cfg_attr(not(doc), allow(missing_docs))]
+#[cfg_attr(doc, doc = "Configuration for the analysis of Z3 traces.")]
 #[derive(Debug, Default, Clone, StructOpt)]
 pub struct ModelConfig {
+    #[structopt(flatten)]
+    pub parser_config: ParserConfig,
+
     /// Whether to log quantifier instantiations (QIs).
     #[structopt(long)]
     pub display_qi_logs: bool,
@@ -107,11 +111,9 @@ impl Model {
     where
         R: std::io::BufRead,
     {
-        let parser_config = ParserConfig {
-            ignore_invalid_lines: true,
-        };
         let lexer = Lexer::new(path_name, input);
-        Parser::new(parser_config, lexer, self).parse()
+        let config = self.config.parser_config.clone();
+        Parser::new(config, lexer, self).parse()
     }
 
     /// All terms in the model.
@@ -642,8 +644,7 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn tool_version(&mut self, s1: String, s2: String) -> RawResult<()> {
-        RawError::check_that_tool_version_is_supported(&s1, &s2)?;
+    fn tool_version(&mut self, _s1: String, _s2: String) -> RawResult<()> {
         self.processed_logs += 1;
         Ok(())
     }
