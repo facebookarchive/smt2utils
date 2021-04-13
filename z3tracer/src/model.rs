@@ -5,12 +5,14 @@ use smt2parser::concrete::Symbol;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use structopt::StructOpt;
 
-use crate::error::{RawError, RawResult, Result};
-use crate::lexer::Lexer;
-use crate::parser::{LogVisitor, Parser, ParserConfig};
-use crate::syntax::{
-    Equality, Ident, Literal, MatchedTerm, Meaning, QiKey, QuantInstantiation,
-    QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
+use crate::{
+    error::{RawError, RawResult, Result},
+    lexer::Lexer,
+    parser::{LogVisitor, Parser, ParserConfig},
+    syntax::{
+        Equality, Ident, Literal, MatchedTerm, Meaning, QiKey, QuantInstantiation,
+        QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
+    },
 };
 
 // https://github.com/TeXitoi/structopt/issues/333

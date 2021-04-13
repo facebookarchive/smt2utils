@@ -16,9 +16,9 @@ pub enum RawError {
     InvalidInteger(std::num::ParseIntError),
     #[error("Invalid hexadecimal string {0}")]
     InvalidHexadecimal(String),
-    #[error("Unexpected char {0:?} {1:?}")]
+    #[error("Unexpected char or end of input: {0:?} instead of {1:?}")]
     UnexpectedChar(Option<char>, Vec<char>),
-    #[error("Unexpected word {0} {1:?}")]
+    #[error("Unexpected word: {0} instead of {1:?}")]
     UnexpectedWord(String, Vec<&'static str>),
     // Parser
     #[error("Missing identifier")]

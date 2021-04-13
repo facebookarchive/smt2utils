@@ -3,11 +3,13 @@
 
 use structopt::StructOpt;
 
-use crate::error::{RawError, RawResult, Result};
-use crate::lexer::Lexer;
-use crate::syntax::{
-    Equality, Ident, Literal, Meaning, QiKey, QuantInstantiation, QuantInstantiationData,
-    QuantInstantiationKind, Term, VarName,
+use crate::{
+    error::{RawError, RawResult, Result},
+    lexer::Lexer,
+    syntax::{
+        Equality, Ident, Literal, Meaning, QiKey, QuantInstantiation, QuantInstantiationData,
+        QuantInstantiationKind, Term, VarName,
+    },
 };
 
 // https://github.com/TeXitoi/structopt/issues/333
@@ -317,6 +319,8 @@ where
             }
             s if self.config.ignore_invalid_lines && !s.starts_with('[') => {
                 // Ignore lines not starting with '['
+                lexer.read_line()?;
+                lexer.read_end_of_line()?;
                 Ok(true)
             }
             s => Err(RawError::UnknownCommand(s.to_string())),
