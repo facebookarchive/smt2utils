@@ -1,0 +1,5 @@
+[tool-version] Z3 4.8.9
+[mk-app] #1 true
+[mk-app] #2 false
+[mk-app] #1 true
+[mk-app] #2 false

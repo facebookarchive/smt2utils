@@ -1,8 +1,10 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::error::{Error, Position, RawError, RawResult};
-use crate::syntax::{Equality, Ident, Literal, MatchedTerm, QiKey, VarName};
+use crate::{
+    error::{Error, Position, RawError, RawResult},
+    syntax::{Equality, Ident, Literal, MatchedTerm, QiKey, VarName},
+};
 use smt2parser::concrete::Symbol;
 
 use std::collections::BTreeMap;
@@ -203,13 +205,15 @@ where
 
     pub(crate) fn read_end_of_line(&mut self) -> RawResult<()> {
         match self.peek_byte() {
-            None => Ok(()),
             Some(b'\n') => {
                 self.consume_byte();
                 self.skip_spaces();
                 Ok(())
             }
-            Some(c) => Err(RawError::UnexpectedChar(Some(*c as char), vec!['\n'])),
+            c => Err(RawError::UnexpectedChar(
+                c.cloned().map(char::from),
+                vec!['\n'],
+            )),
         }
     }
 

@@ -1,18 +1,26 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::collections::{BTreeMap, BinaryHeap};
-use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, BinaryHeap},
+    str::FromStr,
+};
 
-use z3tracer::syntax::Ident;
-use z3tracer::Model;
+use z3tracer::{syntax::Ident, Model, ModelConfig};
 
-fn process_file(path: &str) -> std::io::Result<Model> {
+fn process_file(path: &str) -> anyhow::Result<Model> {
     let file = std::io::BufReader::new(std::fs::File::open(path)?);
     let mut model = Model::default();
-    if let Err(le) = model.process(Some(path.to_string()), file) {
-        panic!("Error at {:?}: {:?}", le.position, le.error);
-    }
+    model.process(Some(path.to_string()), file)?;
+    Ok(model)
+}
+
+fn process_file_with_line_skipping(path: &str) -> anyhow::Result<Model> {
+    let file = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut config = ModelConfig::default();
+    config.parser_config.ignore_invalid_lines = true;
+    let mut model = Model::new(config);
+    model.process(Some(path.to_string()), file)?;
     Ok(model)
 }
 
@@ -41,7 +49,7 @@ impl<T: Ord> Iterator for IntoIterSorted<T> {
 }
 
 #[test]
-fn test_file1() -> std::io::Result<()> {
+fn test_log_file() -> anyhow::Result<()> {
     let model = process_file("tests/data/file1.log")?;
     assert_eq!(model.terms().len(), 273321);
     assert_eq!(
@@ -75,8 +83,7 @@ fn test_file1() -> std::io::Result<()> {
 }
 
 #[test]
-fn test_file2() -> std::io::Result<()> {
-    // Note: This file contains re-used QI keys.
+fn test_log_file_with_reused_qi_keys() -> anyhow::Result<()> {
     let model = process_file("tests/data/file2.log")?;
     assert_eq!(model.terms().len(), 150031);
     assert_eq!(model.instantiations().len(), 10242);
@@ -84,10 +91,16 @@ fn test_file2() -> std::io::Result<()> {
 }
 
 #[test]
-fn test_file3() -> std::io::Result<()> {
-    // Note: This file was generated with trace=true only.
+fn test_log_file_with_no_proofs() -> anyhow::Result<()> {
+    // This file was generated with trace=true only.
     let model = process_file("tests/data/file3.log")?;
     assert_eq!(model.terms().len(), 37232);
     assert_eq!(model.instantiations().len(), 11931);
     Ok(())
+}
+
+#[test]
+fn test_truncated_log_file() {
+    assert!(process_file("tests/data/file4.log").is_err());
+    assert!(process_file_with_line_skipping("tests/data/file4.log").is_err());
 }

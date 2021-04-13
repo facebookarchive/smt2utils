@@ -20,6 +20,9 @@ structopt = "0.3.12"
 smt2parser = { path = "../smt2parser", version = "0.2.0" }
 thiserror = "1.0.24"
 
+[dev-dependencies]
+anyhow = "1.0.40"
+
 [[bin]]
 name = "z3tracer"
 path = "src/main.rs"
