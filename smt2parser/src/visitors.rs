@@ -44,8 +44,8 @@ pub enum Index<Symbol> {
 }
 
 impl<S> Index<S> {
-    /// Re-map the symbols in an Index value.
-    pub(crate) fn map<F, V, T>(self, v: &mut V, f: F) -> Index<T>
+    /// Remap the symbols of an Index value.
+    pub(crate) fn remap<F, V, T>(self, v: &mut V, f: F) -> Index<T>
     where
         F: Copy + Fn(&mut V, S) -> T,
     {
@@ -69,8 +69,8 @@ pub enum Identifier<Symbol> {
 }
 
 impl<S> Identifier<S> {
-    /// Re-map the symbols in an Identifier value.
-    pub(crate) fn map<F, V, T>(self, v: &mut V, f: F) -> Identifier<T>
+    /// Remap the symbols of an Identifier value.
+    pub(crate) fn remap<F, V, T>(self, v: &mut V, f: F) -> Identifier<T>
     where
         F: Copy + Fn(&mut V, S) -> T,
     {
@@ -81,7 +81,7 @@ impl<S> Identifier<S> {
             },
             Indexed { symbol, indices } => Indexed {
                 symbol: f(v, symbol),
-                indices: indices.into_iter().map(|i| i.map(v, f)).collect(),
+                indices: indices.into_iter().map(|i| i.remap(v, f)).collect(),
             },
         }
     }
@@ -114,8 +114,8 @@ pub enum AttributeValue<Constant, Symbol, SExpr> {
 }
 
 impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
-    /// Re-map the inner types in an AttributeValue.
-    pub(crate) fn map<V, F1, F2, F3, R1, R2, R3>(
+    /// Remap the generically-typed values of an AttributeValue.
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, R3>(
         self,
         v: &mut V,
         f1: F1,
@@ -172,8 +172,13 @@ pub struct ConstructorDec<Symbol, Sort> {
 }
 
 impl<T1, T2> ConstructorDec<T1, T2> {
-    /// Re-map the inner types in a ConstructorDec value.
-    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> ConstructorDec<R1, R2>
+    /// Remap the generically-typed values of a ConstructorDec value.
+    pub(crate) fn remap<V, F1, F2, R1, R2>(
+        self,
+        v: &mut V,
+        f1: F1,
+        f2: F2,
+    ) -> ConstructorDec<R1, R2>
     where
         F1: Fn(&mut V, T1) -> R1,
         F2: Fn(&mut V, T2) -> R2,
@@ -196,8 +201,8 @@ pub struct DatatypeDec<Symbol, Sort> {
 }
 
 impl<T1, T2> DatatypeDec<T1, T2> {
-    /// Re-map the inner types in a DatatypeDec value.
-    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> DatatypeDec<R1, R2>
+    /// Remap the generically-typed values of a DatatypeDec value.
+    pub(crate) fn remap<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> DatatypeDec<R1, R2>
     where
         F1: Copy + Fn(&mut V, T1) -> R1,
         F2: Copy + Fn(&mut V, T2) -> R2,
@@ -207,7 +212,7 @@ impl<T1, T2> DatatypeDec<T1, T2> {
             constructors: self
                 .constructors
                 .into_iter()
-                .map(|c| c.map(v, f1, f2))
+                .map(|c| c.remap(v, f1, f2))
                 .collect(),
         }
     }
@@ -221,8 +226,8 @@ pub struct FunctionDec<Symbol, Sort> {
 }
 
 impl<T1, T2> FunctionDec<T1, T2> {
-    /// Re-map the inner types in a FunctionDec value.
-    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> FunctionDec<R1, R2>
+    /// Remap the generically-typed values of a FunctionDec value.
+    pub(crate) fn remap<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> FunctionDec<R1, R2>
     where
         F1: Copy + Fn(&mut V, T1) -> R1,
         F2: Copy + Fn(&mut V, T2) -> R2,
