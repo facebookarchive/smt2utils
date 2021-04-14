@@ -494,7 +494,7 @@ mod tests {
         // Test syntax visiting while we're at it.
         assert_eq!(
             value,
-            value.clone().apply(&mut crate::concrete::SyntaxBuilder)
+            value.clone().accept(&mut crate::concrete::SyntaxBuilder)
         );
     }
 }

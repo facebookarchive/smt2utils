@@ -696,7 +696,7 @@ fn test_term_rewriter() {
     let mut rewrite =
         crate::concrete::SyntaxBuilder.fix_symbols_with(|x: Symbol| Symbol(x.0 + "__"));
 
-    let command2 = command.clone().apply(&mut rewrite);
+    let command2 = command.clone().accept(&mut rewrite);
     let command3 = Command::Assert {
         term: Term::Let {
             var_bindings: vec![(
@@ -738,7 +738,7 @@ fn test_term_rewriter() {
     assert_eq!(command2, command3);
 
     let mut rewrite = crate::concrete::SyntaxBuilder.fix_commands_with(|_: Command| Command::Exit);
-    let command2 = command.clone().apply(&mut rewrite);
+    let command2 = command.clone().accept(&mut rewrite);
     let command3 = Command::Exit;
     assert_eq!(command2, command3);
 }
