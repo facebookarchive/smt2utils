@@ -491,5 +491,10 @@ mod tests {
         let value = parse_tokens(Lexer::new(&b"(declare-datatypes ((T@$TypeValue 0)(T@$TypeValueArray 0)) ((($BooleanType ) ($IntegerType ) ($AddressType ) ($StrType ) ($VectorType (|t#$VectorType| T@$TypeValue) ) ($StructType (|name#$StructType| T@$TypeName) (|ts#$StructType| T@$TypeValueArray) ) ($TypeType ) ($ErrorType ) ) (($TypeValueArray (|v#$TypeValueArray| |T@[Int]$TypeValue|) (|l#$TypeValueArray| Int) ) ) ))"[..])).unwrap();
 
         assert!(matches!(value, Command::DeclareDatatypes { .. }));
+        // Test syntax visiting while we're at it.
+        assert_eq!(
+            value,
+            value.clone().apply(&mut crate::concrete::SyntaxBuilder)
+        );
     }
 }

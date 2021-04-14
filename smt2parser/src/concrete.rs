@@ -210,6 +210,23 @@ impl ConstantVisitor for SyntaxBuilder {
     }
 }
 
+impl Constant {
+    /// Visit a concrete constant.
+    pub fn apply<V>(self, visitor: &mut V) -> V::T
+    where
+        V: ConstantVisitor,
+    {
+        use Constant::*;
+        match self {
+            Numeral(value) => visitor.visit_numeral_constant(value),
+            Decimal(value) => visitor.visit_decimal_constant(value),
+            Hexadecimal(value) => visitor.visit_hexadecimal_constant(value),
+            Binary(value) => visitor.visit_binary_constant(value),
+            String(value) => visitor.visit_string_constant(value),
+        }
+    }
+}
+
 impl SymbolVisitor for SyntaxBuilder {
     type T = Symbol;
 
@@ -218,11 +235,31 @@ impl SymbolVisitor for SyntaxBuilder {
     }
 }
 
+impl Symbol {
+    /// Visit a concrete symbol.
+    pub fn apply<V>(self, visitor: &mut V) -> V::T
+    where
+        V: SymbolVisitor,
+    {
+        visitor.visit_symbol(self.0)
+    }
+}
+
 impl KeywordVisitor for SyntaxBuilder {
     type T = Keyword;
 
     fn visit_keyword(&mut self, value: String) -> Self::T {
         Keyword(value)
+    }
+}
+
+impl Keyword {
+    /// Visit a concrete keyword.
+    pub fn apply<V>(self, visitor: &mut V) -> V::T
+    where
+        V: KeywordVisitor,
+    {
+        visitor.visit_keyword(self.0)
     }
 }
 
@@ -246,6 +283,37 @@ impl SExprVisitor<Constant, Symbol, Keyword> for SyntaxBuilder {
     }
 }
 
+impl SExpr {
+    /// Visit a concrete S-expression.
+    pub fn apply<V, T, C, S, K>(self, visitor: &mut V) -> T
+    where
+        V: SExprVisitor<C, S, K, T = T>
+            + ConstantVisitor<T = C>
+            + SymbolVisitor<T = S>
+            + KeywordVisitor<T = K>,
+    {
+        use SExpr::*;
+        match self {
+            Constant(value) => {
+                let c = value.apply(visitor);
+                visitor.visit_constant_s_expr(c)
+            }
+            Symbol(value) => {
+                let s = value.apply(visitor);
+                visitor.visit_symbol_s_expr(s)
+            }
+            Keyword(value) => {
+                let k = value.apply(visitor);
+                visitor.visit_keyword_s_expr(k)
+            }
+            Application(values) => {
+                let ts = values.into_iter().map(|e| e.apply(visitor)).collect();
+                visitor.visit_application_s_expr(ts)
+            }
+        }
+    }
+}
+
 impl SortVisitor<Symbol> for SyntaxBuilder {
     type T = Sort;
 
@@ -265,6 +333,30 @@ impl SortVisitor<Symbol> for SyntaxBuilder {
     }
 }
 
+impl Sort {
+    /// Visit a concrete sort.
+    pub fn apply<V, T, S>(self, visitor: &mut V) -> T
+    where
+        V: SortVisitor<S, T = T> + SymbolVisitor<T = S>,
+    {
+        use Sort::*;
+        match self {
+            Simple { identifier } => {
+                let i = identifier.map(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                visitor.visit_simple_sort(i)
+            }
+            Parameterized {
+                identifier,
+                parameters,
+            } => {
+                let i = identifier.map(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let ts = parameters.into_iter().map(|s| s.apply(visitor)).collect();
+                visitor.visit_parameterized_sort(i, ts)
+            }
+        }
+    }
+}
+
 impl QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
     type T = QualIdentifier;
 
@@ -274,6 +366,29 @@ impl QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
 
     fn visit_sorted_identifier(&mut self, identifier: Identifier, sort: Sort) -> Self::T {
         QualIdentifier::Sorted { identifier, sort }
+    }
+}
+
+impl QualIdentifier {
+    /// Visit a concrete qualified identifier.
+    pub fn apply<V, T, S1, S2>(self, visitor: &mut V) -> T
+    where
+        V: SortVisitor<S1, T = S2>
+            + SymbolVisitor<T = S1>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = T>,
+    {
+        use QualIdentifier::*;
+        match self {
+            Simple { identifier } => {
+                let i = identifier.map(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                visitor.visit_simple_identifier(i)
+            }
+            Sorted { identifier, sort } => {
+                let i = identifier.map(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let s = sort.apply(visitor);
+                visitor.visit_sorted_identifier(i, s)
+            }
+        }
     }
 }
 
@@ -326,6 +441,95 @@ impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for Syn
     ) -> Self::T {
         let term = Box::new(term);
         Term::Attributes { term, attributes }
+    }
+}
+
+impl Term {
+    /// Visit a concrete term.
+    pub fn apply<V, T, S1, S2, S3, S4, S5, S6>(self, visitor: &mut V) -> T
+    where
+        V: SortVisitor<S1, T = S2>
+            + SymbolVisitor<T = S1>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3>
+            + ConstantVisitor<T = S4>
+            + KeywordVisitor<T = S5>
+            + SExprVisitor<S4, S1, S5, T = S6>
+            + TermVisitor<S4, S3, S5, S6, S1, S2, T = T>,
+    {
+        use Term::*;
+        match self {
+            Constant(value) => {
+                let c = value.apply(visitor);
+                visitor.visit_constant(c)
+            }
+            QualIdentifier(value) => {
+                let qi = value.apply(visitor);
+                visitor.visit_qual_identifier(qi)
+            }
+            Application {
+                qual_identifier,
+                arguments,
+            } => {
+                let qi = qual_identifier.apply(visitor);
+                let ts = arguments.into_iter().map(|t| t.apply(visitor)).collect();
+                visitor.visit_application(qi, ts)
+            }
+            Let { var_bindings, term } => {
+                let bs = var_bindings
+                    .into_iter()
+                    .map(|(s, t)| (s.apply(visitor), t.apply(visitor)))
+                    .collect();
+                let t = term.apply(visitor);
+                visitor.visit_let(bs, t)
+            }
+            Forall { vars, term } => {
+                let vs = vars
+                    .into_iter()
+                    .map(|(v, s)| (v.apply(visitor), s.apply(visitor)))
+                    .collect();
+                let t = term.apply(visitor);
+                visitor.visit_forall(vs, t)
+            }
+            Exists { vars, term } => {
+                let vs = vars
+                    .into_iter()
+                    .map(|(v, s)| (v.apply(visitor), s.apply(visitor)))
+                    .collect();
+                let t = term.apply(visitor);
+                visitor.visit_exists(vs, t)
+            }
+            Match { term, cases } => {
+                let t = term.apply(visitor);
+                let cs = cases
+                    .into_iter()
+                    .map(|(ss, t)| {
+                        (
+                            ss.into_iter().map(|s| s.apply(visitor)).collect(),
+                            t.apply(visitor),
+                        )
+                    })
+                    .collect();
+                visitor.visit_match(t, cs)
+            }
+            Attributes { term, attributes } => {
+                let t = term.apply(visitor);
+                let xs = attributes
+                    .into_iter()
+                    .map(|(k, x)| {
+                        (
+                            k.apply(visitor),
+                            x.map(
+                                visitor,
+                                |v, c: self::Constant| c.apply(v),
+                                |v, s: Symbol| s.apply(v),
+                                |v, e: SExpr| e.apply(v),
+                            ),
+                        )
+                    })
+                    .collect();
+                visitor.visit_attributes(t, xs)
+            }
+        }
     }
 }
 
@@ -466,6 +670,151 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
 
     fn visit_set_option(&mut self, keyword: Keyword, value: AttributeValue) -> Self::T {
         Command::SetOption { keyword, value }
+    }
+}
+
+impl Command {
+    /// Visit a concrete command.
+    pub fn apply<V, T, S1, S2, S3, S4, S5, S6, S7>(self, visitor: &mut V) -> T
+    where
+        V: SortVisitor<S1, T = S2>
+            + SymbolVisitor<T = S1>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3>
+            + ConstantVisitor<T = S4>
+            + KeywordVisitor<T = S5>
+            + SExprVisitor<S4, S1, S5, T = S6>
+            + TermVisitor<S4, S3, S5, S6, S1, S2, T = S7>
+            + CommandVisitor<S7, S1, S2, S5, S4, S6, T = T>,
+    {
+        use Command::*;
+        match self {
+            Assert { term } => {
+                let t = term.apply(visitor);
+                visitor.visit_assert(t)
+            }
+            CheckSat => visitor.visit_check_sat(),
+            CheckSatAssuming { literals } => {
+                let ls = literals
+                    .into_iter()
+                    .map(|(s, b)| (s.apply(visitor), b))
+                    .collect();
+                visitor.visit_check_sat_assuming(ls)
+            }
+            DeclareConst { symbol, sort } => {
+                let symb = symbol.apply(visitor);
+                let sort = sort.apply(visitor);
+                visitor.visit_declare_const(symb, sort)
+            }
+            DeclareDatatype { symbol, datatype } => {
+                let s = symbol.apply(visitor);
+                let dt = datatype.map(visitor, |v, s| s.apply(v), |v, s| s.apply(v));
+                visitor.visit_declare_datatype(s, dt)
+            }
+            DeclareDatatypes { datatypes } => {
+                let dts = datatypes
+                    .into_iter()
+                    .map(|(s, n, dt)| {
+                        let s = s.apply(visitor);
+                        let dt = dt.map(visitor, |v, s| s.apply(v), |v, s| s.apply(v));
+                        (s, n, dt)
+                    })
+                    .collect();
+                visitor.visit_declare_datatypes(dts)
+            }
+            DeclareFun {
+                symbol,
+                parameters,
+                sort,
+            } => {
+                let symb = symbol.apply(visitor);
+                let ps = parameters.into_iter().map(|s| s.apply(visitor)).collect();
+                let sort = sort.apply(visitor);
+                visitor.visit_declare_fun(symb, ps, sort)
+            }
+            DeclareSort { symbol, arity } => {
+                let s = symbol.apply(visitor);
+                visitor.visit_declare_sort(s, arity)
+            }
+            DefineFun { sig, term } => {
+                let s = sig.map(visitor, |v, s| s.apply(v), |v, s| s.apply(v));
+                let t = term.apply(visitor);
+                visitor.visit_define_fun(s, t)
+            }
+            DefineFunRec { sig, term } => {
+                let s = sig.map(visitor, |v, s| s.apply(v), |v, s| s.apply(v));
+                let t = term.apply(visitor);
+                visitor.visit_define_fun_rec(s, t)
+            }
+            DefineFunsRec { funs } => {
+                let funs = funs
+                    .into_iter()
+                    .map(|(s, t)| {
+                        let s = s.map(visitor, |v, s| s.apply(v), |v, s| s.apply(v));
+                        let t = t.apply(visitor);
+                        (s, t)
+                    })
+                    .collect();
+                visitor.visit_define_funs_rec(funs)
+            }
+            DefineSort {
+                symbol,
+                parameters,
+                sort,
+            } => {
+                let symb = symbol.apply(visitor);
+                let ps = parameters.into_iter().map(|s| s.apply(visitor)).collect();
+                let sort = sort.apply(visitor);
+                visitor.visit_define_sort(symb, ps, sort)
+            }
+            Echo { message } => visitor.visit_echo(message),
+            Exit => visitor.visit_exit(),
+            GetAssertions => visitor.visit_get_assertions(),
+            GetAssignment => visitor.visit_get_assignment(),
+            GetInfo { flag } => {
+                let k = flag.apply(visitor);
+                visitor.visit_get_info(k)
+            }
+            GetModel => visitor.visit_get_model(),
+            GetOption { keyword } => {
+                let k = keyword.apply(visitor);
+                visitor.visit_get_option(k)
+            }
+            GetProof => visitor.visit_get_proof(),
+            GetUnsatAssumptions => visitor.visit_get_unsat_assumptions(),
+            GetUnsatCore => visitor.visit_get_unsat_core(),
+            GetValue { terms } => {
+                let ts = terms.into_iter().map(|t| t.apply(visitor)).collect();
+                visitor.visit_get_value(ts)
+            }
+            Pop { level } => visitor.visit_pop(level),
+            Push { level } => visitor.visit_push(level),
+            Reset => visitor.visit_reset(),
+            ResetAssertions => visitor.visit_reset_assertions(),
+            SetInfo { keyword, value } => {
+                let k = keyword.apply(visitor);
+                let v = value.map(
+                    visitor,
+                    |v, c: self::Constant| c.apply(v),
+                    |v, s: Symbol| s.apply(v),
+                    |v, e: SExpr| e.apply(v),
+                );
+                visitor.visit_set_info(k, v)
+            }
+            SetLogic { symbol } => {
+                let s = symbol.apply(visitor);
+                visitor.visit_set_logic(s)
+            }
+            SetOption { keyword, value } => {
+                let k = keyword.apply(visitor);
+                let v = value.map(
+                    visitor,
+                    |v, c: self::Constant| c.apply(v),
+                    |v, s: Symbol| s.apply(v),
+                    |v, e: SExpr| e.apply(v),
+                );
+                visitor.visit_set_option(k, v)
+            }
+        }
     }
 }
 
@@ -862,4 +1211,48 @@ pub fn parse_simple_attribute_value(input: &str) -> Option<AttributeValue> {
         Token::Symbol(x) => Some(AttributeValue::Symbol(Symbol(x))),
         _ => None,
     }
+}
+
+#[test]
+fn test_syntax_visitor() {
+    // (assert (let ((x (f x 2))) (= x 3)))
+    let command = Command::Assert {
+        term: Term::Let {
+            var_bindings: vec![(
+                Symbol("x".into()),
+                Term::Application {
+                    qual_identifier: QualIdentifier::Simple {
+                        identifier: Identifier::Simple {
+                            symbol: Symbol("f".into()),
+                        },
+                    },
+                    arguments: vec![
+                        Term::QualIdentifier(QualIdentifier::Simple {
+                            identifier: Identifier::Simple {
+                                symbol: Symbol("x".into()),
+                            },
+                        }),
+                        Term::Constant(Constant::Numeral(num::BigUint::from(2u32))),
+                    ],
+                },
+            )],
+            term: Box::new(Term::Application {
+                qual_identifier: QualIdentifier::Simple {
+                    identifier: Identifier::Simple {
+                        symbol: Symbol("=".into()),
+                    },
+                },
+                arguments: vec![
+                    Term::QualIdentifier(QualIdentifier::Simple {
+                        identifier: Identifier::Simple {
+                            symbol: Symbol("x".into()),
+                        },
+                    }),
+                    Term::Constant(Constant::Numeral(num::BigUint::from(3u32))),
+                ],
+            }),
+        },
+    };
+    let command2 = command.clone().apply(&mut SyntaxBuilder);
+    assert_eq!(command, command2);
 }

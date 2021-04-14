@@ -43,6 +43,20 @@ pub enum Index<Symbol> {
     Symbol(Symbol),
 }
 
+impl<S> Index<S> {
+    /// Re-map the symbols in an Index value.
+    pub(crate) fn map<F, V, T>(self, v: &mut V, f: F) -> Index<T>
+    where
+        F: Copy + Fn(&mut V, S) -> T,
+    {
+        use Index::*;
+        match self {
+            Numeral(n) => Numeral(n),
+            Symbol(s) => Symbol(f(v, s)),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub enum Identifier<Symbol> {
     Simple {
@@ -52,6 +66,25 @@ pub enum Identifier<Symbol> {
         symbol: Symbol,
         indices: Vec<Index<Symbol>>,
     },
+}
+
+impl<S> Identifier<S> {
+    /// Re-map the symbols in an Identifier value.
+    pub(crate) fn map<F, V, T>(self, v: &mut V, f: F) -> Identifier<T>
+    where
+        F: Copy + Fn(&mut V, S) -> T,
+    {
+        use Identifier::*;
+        match self {
+            Simple { symbol } => Simple {
+                symbol: f(v, symbol),
+            },
+            Indexed { symbol, indices } => Indexed {
+                symbol: f(v, symbol),
+                indices: indices.into_iter().map(|i| i.map(v, f)).collect(),
+            },
+        }
+    }
 }
 
 pub trait SortVisitor<Symbol> {
@@ -78,6 +111,30 @@ pub enum AttributeValue<Constant, Symbol, SExpr> {
     Constant(Constant),
     Symbol(Symbol),
     SExpr(Vec<SExpr>),
+}
+
+impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
+    /// Re-map the inner types in an AttributeValue.
+    pub(crate) fn map<V, F1, F2, F3, R1, R2, R3>(
+        self,
+        v: &mut V,
+        f1: F1,
+        f2: F2,
+        f3: F3,
+    ) -> AttributeValue<R1, R2, R3>
+    where
+        F1: Fn(&mut V, T1) -> R1,
+        F2: Fn(&mut V, T2) -> R2,
+        F3: Fn(&mut V, T3) -> R3,
+    {
+        use AttributeValue::*;
+        match self {
+            None => None,
+            Constant(value) => Constant(f1(v, value)),
+            Symbol(value) => Symbol(f2(v, value)),
+            SExpr(values) => SExpr(values.into_iter().map(|x| f3(v, x)).collect()),
+        }
+    }
 }
 
 pub trait TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> {
@@ -114,10 +171,46 @@ pub struct ConstructorDec<Symbol, Sort> {
     pub selectors: Vec<(Symbol, Sort)>,
 }
 
+impl<T1, T2> ConstructorDec<T1, T2> {
+    /// Re-map the inner types in a ConstructorDec value.
+    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> ConstructorDec<R1, R2>
+    where
+        F1: Fn(&mut V, T1) -> R1,
+        F2: Fn(&mut V, T2) -> R2,
+    {
+        ConstructorDec {
+            symbol: f1(v, self.symbol),
+            selectors: self
+                .selectors
+                .into_iter()
+                .map(|(s1, s2)| (f1(v, s1), f2(v, s2)))
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
 pub struct DatatypeDec<Symbol, Sort> {
     pub parameters: Vec<Symbol>,
     pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
+}
+
+impl<T1, T2> DatatypeDec<T1, T2> {
+    /// Re-map the inner types in a DatatypeDec value.
+    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> DatatypeDec<R1, R2>
+    where
+        F1: Copy + Fn(&mut V, T1) -> R1,
+        F2: Copy + Fn(&mut V, T2) -> R2,
+    {
+        DatatypeDec {
+            parameters: self.parameters.into_iter().map(|x| f1(v, x)).collect(),
+            constructors: self
+                .constructors
+                .into_iter()
+                .map(|c| c.map(v, f1, f2))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
@@ -125,6 +218,25 @@ pub struct FunctionDec<Symbol, Sort> {
     pub name: Symbol,
     pub parameters: Vec<(Symbol, Sort)>,
     pub result: Sort,
+}
+
+impl<T1, T2> FunctionDec<T1, T2> {
+    /// Re-map the inner types in a FunctionDec value.
+    pub(crate) fn map<V, F1, F2, R1, R2>(self, v: &mut V, f1: F1, f2: F2) -> FunctionDec<R1, R2>
+    where
+        F1: Copy + Fn(&mut V, T1) -> R1,
+        F2: Copy + Fn(&mut V, T2) -> R2,
+    {
+        FunctionDec {
+            name: f1(v, self.name),
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|(s1, s2)| (f1(v, s1), f2(v, s2)))
+                .collect(),
+            result: f2(v, self.result),
+        }
+    }
 }
 
 pub trait CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> {
