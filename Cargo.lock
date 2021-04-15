@@ -325,6 +325,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "smt2patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rand",
+ "smt2parser",
+ "structopt",
+]
+
+[[package]]
 name = "smt2proxy"
 version = "0.2.0"
 dependencies = [

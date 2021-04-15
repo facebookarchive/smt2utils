@@ -1,0 +1,27 @@
+[package]
+name = "smt2patch"
+version = "0.1.0"
+description = "Library and binary tool to patch SMT2 files"
+repository = "https://github.com/facebookincubator/smt2utils"
+documentation = "https://docs.rs/smt2patch"
+authors = ["Mathieu Baudet <mathieubaudet@fb.com>"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["smt", "solver", "smt-lib"]
+categories = ["science"]
+edition = "2018"
+exclude = [
+    # Readme template that doesn't need to be included.
+    "README.tpl",
+]
+
+[dependencies]
+rand = "0.8.0"
+structopt = "0.3.12"
+smt2parser = { path = "../smt2parser", version = "0.3.0" }
+anyhow = "1.0.40"
+
+[[bin]]
+name = "smt2patch"
+path = "src/main.rs"
+test = false
