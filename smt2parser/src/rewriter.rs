@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Rewriting of a concrete syntax trees
+//! Rewriting of Smt2 values
 
 use crate::{
     visitors::{
@@ -12,400 +12,774 @@ use crate::{
     Binary, Decimal, Hexadecimal, Numeral,
 };
 
-/// Combine an SMT2 visitor with functions to rewrite intermediate values
-/// of a given type.
-pub struct Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8> {
-    visitor: V,
-    f_constant: F1,
-    f_symbol: F2,
-    f_keyword: F3,
-    f_s_expr: F4,
-    f_sort: F5,
-    f_qual_identifier: F6,
-    f_term: F7,
-    f_command: F8,
+/// Helper trait to create variants of an existing Smt2Visitor.
+pub trait Rewriter {
+    type V: Smt2Visitor;
+
+    /// Delegate visitor
+    fn visitor(&mut self) -> &mut Self::V;
+
+    // Post-processing
+    fn process_constant(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Constant,
+    ) -> <Self::V as Smt2Visitor>::Constant {
+        value
+    }
+    fn process_symbol(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Symbol,
+    ) -> <Self::V as Smt2Visitor>::Symbol {
+        value
+    }
+    fn process_keyword(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Keyword,
+    ) -> <Self::V as Smt2Visitor>::Keyword {
+        value
+    }
+    fn process_s_expr(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::SExpr,
+    ) -> <Self::V as Smt2Visitor>::SExpr {
+        value
+    }
+    fn process_sort(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Sort,
+    ) -> <Self::V as Smt2Visitor>::Sort {
+        value
+    }
+    fn process_qual_identifier(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::QualIdentifier,
+    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
+        value
+    }
+    fn process_term(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        value
+    }
+    fn process_command(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Command,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        value
+    }
+
+    // ConstantVisitor
+    fn visit_numeral_constant(&mut self, value: Numeral) -> <Self::V as Smt2Visitor>::Constant {
+        let value = self.visitor().visit_numeral_constant(value);
+        self.process_constant(value)
+    }
+    fn visit_decimal_constant(&mut self, value: Decimal) -> <Self::V as Smt2Visitor>::Constant {
+        let value = self.visitor().visit_decimal_constant(value);
+        self.process_constant(value)
+    }
+    fn visit_hexadecimal_constant(
+        &mut self,
+        value: Hexadecimal,
+    ) -> <Self::V as Smt2Visitor>::Constant {
+        let value = self.visitor().visit_hexadecimal_constant(value);
+        self.process_constant(value)
+    }
+    fn visit_binary_constant(&mut self, value: Binary) -> <Self::V as Smt2Visitor>::Constant {
+        let value = self.visitor().visit_binary_constant(value);
+        self.process_constant(value)
+    }
+    fn visit_string_constant(&mut self, value: String) -> <Self::V as Smt2Visitor>::Constant {
+        let value = self.visitor().visit_string_constant(value);
+        self.process_constant(value)
+    }
+
+    // SymbolVisitor
+    fn visit_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
+        let value = self.visitor().visit_symbol(value);
+        self.process_symbol(value)
+    }
+
+    // KeywordVisitor
+    fn visit_keyword(&mut self, value: String) -> <Self::V as Smt2Visitor>::Keyword {
+        let value = self.visitor().visit_keyword(value);
+        self.process_keyword(value)
+    }
+
+    // SExprVisitor
+    fn visit_constant_s_expr(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Constant,
+    ) -> <Self::V as Smt2Visitor>::SExpr {
+        let value = self.visitor().visit_constant_s_expr(value);
+        self.process_s_expr(value)
+    }
+    fn visit_symbol_s_expr(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Symbol,
+    ) -> <Self::V as Smt2Visitor>::SExpr {
+        let value = self.visitor().visit_symbol_s_expr(value);
+        self.process_s_expr(value)
+    }
+    fn visit_keyword_s_expr(
+        &mut self,
+        value: <Self::V as Smt2Visitor>::Keyword,
+    ) -> <Self::V as Smt2Visitor>::SExpr {
+        let value = self.visitor().visit_keyword_s_expr(value);
+        self.process_s_expr(value)
+    }
+    fn visit_application_s_expr(
+        &mut self,
+        values: Vec<<Self::V as Smt2Visitor>::SExpr>,
+    ) -> <Self::V as Smt2Visitor>::SExpr {
+        let value = self.visitor().visit_application_s_expr(values);
+        self.process_s_expr(value)
+    }
+
+    // SortVisitor
+    fn visit_simple_sort(
+        &mut self,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+    ) -> <Self::V as Smt2Visitor>::Sort {
+        let value = self.visitor().visit_simple_sort(identifier);
+        self.process_sort(value)
+    }
+    fn visit_parameterized_sort(
+        &mut self,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        parameters: Vec<<Self::V as Smt2Visitor>::Sort>,
+    ) -> <Self::V as Smt2Visitor>::Sort {
+        let value = self
+            .visitor()
+            .visit_parameterized_sort(identifier, parameters);
+        self.process_sort(value)
+    }
+
+    // QualIdentifierVisitor
+    fn visit_simple_identifier(
+        &mut self,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
+        let value = self.visitor().visit_simple_identifier(identifier);
+        self.process_qual_identifier(value)
+    }
+    fn visit_sorted_identifier(
+        &mut self,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        sort: <Self::V as Smt2Visitor>::Sort,
+    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
+        let value = self.visitor().visit_sorted_identifier(identifier, sort);
+        self.process_qual_identifier(value)
+    }
+
+    // TermVisitor
+    fn visit_constant(
+        &mut self,
+        constant: <Self::V as Smt2Visitor>::Constant,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_constant(constant);
+        self.process_term(value)
+    }
+    fn visit_qual_identifier(
+        &mut self,
+        qual_identifier: <Self::V as Smt2Visitor>::QualIdentifier,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_qual_identifier(qual_identifier);
+        self.process_term(value)
+    }
+    fn visit_application(
+        &mut self,
+        qual_identifier: <Self::V as Smt2Visitor>::QualIdentifier,
+        arguments: Vec<<Self::V as Smt2Visitor>::Term>,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_application(qual_identifier, arguments);
+        self.process_term(value)
+    }
+    fn visit_let(
+        &mut self,
+        var_bindings: Vec<(
+            <Self::V as Smt2Visitor>::Symbol,
+            <Self::V as Smt2Visitor>::Term,
+        )>,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_let(var_bindings, term);
+        self.process_term(value)
+    }
+    fn visit_forall(
+        &mut self,
+        vars: Vec<(
+            <Self::V as Smt2Visitor>::Symbol,
+            <Self::V as Smt2Visitor>::Sort,
+        )>,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_forall(vars, term);
+        self.process_term(value)
+    }
+    fn visit_exists(
+        &mut self,
+        vars: Vec<(
+            <Self::V as Smt2Visitor>::Symbol,
+            <Self::V as Smt2Visitor>::Sort,
+        )>,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_exists(vars, term);
+        self.process_term(value)
+    }
+    fn visit_match(
+        &mut self,
+        term: <Self::V as Smt2Visitor>::Term,
+        cases: Vec<(
+            Vec<<Self::V as Smt2Visitor>::Symbol>,
+            <Self::V as Smt2Visitor>::Term,
+        )>,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_match(term, cases);
+        self.process_term(value)
+    }
+    fn visit_attributes(
+        &mut self,
+        term: <Self::V as Smt2Visitor>::Term,
+        attributes: Vec<(
+            <Self::V as Smt2Visitor>::Keyword,
+            AttributeValue<
+                <Self::V as Smt2Visitor>::Constant,
+                <Self::V as Smt2Visitor>::Symbol,
+                <Self::V as Smt2Visitor>::SExpr,
+            >,
+        )>,
+    ) -> <Self::V as Smt2Visitor>::Term {
+        let value = self.visitor().visit_attributes(term, attributes);
+        self.process_term(value)
+    }
+
+    // CommandVisitor
+    fn visit_assert(
+        &mut self,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_assert(term);
+        self.process_command(value)
+    }
+    fn visit_check_sat(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_check_sat();
+        self.process_command(value)
+    }
+    fn visit_check_sat_assuming(
+        &mut self,
+        literals: Vec<(<Self::V as Smt2Visitor>::Symbol, bool)>,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_check_sat_assuming(literals);
+        self.process_command(value)
+    }
+    fn visit_declare_const(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+        sort: <Self::V as Smt2Visitor>::Sort,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_declare_const(symbol, sort);
+        self.process_command(value)
+    }
+    fn visit_declare_datatype(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+        datatype: DatatypeDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_declare_datatype(symbol, datatype);
+        self.process_command(value)
+    }
+    fn visit_declare_datatypes(
+        &mut self,
+        datatypes: Vec<(
+            <Self::V as Smt2Visitor>::Symbol,
+            Numeral,
+            DatatypeDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
+        )>,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_declare_datatypes(datatypes);
+        self.process_command(value)
+    }
+    fn visit_declare_fun(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+        parameters: Vec<<Self::V as Smt2Visitor>::Sort>,
+        sort: <Self::V as Smt2Visitor>::Sort,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_declare_fun(symbol, parameters, sort);
+        self.process_command(value)
+    }
+    fn visit_declare_sort(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+        arity: Numeral,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_declare_sort(symbol, arity);
+        self.process_command(value)
+    }
+    fn visit_define_fun(
+        &mut self,
+        sig: FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_define_fun(sig, term);
+        self.process_command(value)
+    }
+    fn visit_define_fun_rec(
+        &mut self,
+        sig: FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
+        term: <Self::V as Smt2Visitor>::Term,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_define_fun_rec(sig, term);
+        self.process_command(value)
+    }
+    fn visit_define_funs_rec(
+        &mut self,
+        funs: Vec<(
+            FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
+            <Self::V as Smt2Visitor>::Term,
+        )>,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_define_funs_rec(funs);
+        self.process_command(value)
+    }
+    fn visit_define_sort(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+        parameters: Vec<<Self::V as Smt2Visitor>::Symbol>,
+        sort: <Self::V as Smt2Visitor>::Sort,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_define_sort(symbol, parameters, sort);
+        self.process_command(value)
+    }
+    fn visit_echo(&mut self, message: String) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_echo(message);
+        self.process_command(value)
+    }
+    fn visit_exit(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_exit();
+        self.process_command(value)
+    }
+    fn visit_get_assertions(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_assertions();
+        self.process_command(value)
+    }
+    fn visit_get_assignment(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_assignment();
+        self.process_command(value)
+    }
+    fn visit_get_info(
+        &mut self,
+        flag: <Self::V as Smt2Visitor>::Keyword,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_info(flag);
+        self.process_command(value)
+    }
+    fn visit_get_model(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_model();
+        self.process_command(value)
+    }
+    fn visit_get_option(
+        &mut self,
+        keyword: <Self::V as Smt2Visitor>::Keyword,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_option(keyword);
+        self.process_command(value)
+    }
+    fn visit_get_proof(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_proof();
+        self.process_command(value)
+    }
+    fn visit_get_unsat_assumptions(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_unsat_assumptions();
+        self.process_command(value)
+    }
+    fn visit_get_unsat_core(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_unsat_core();
+        self.process_command(value)
+    }
+    fn visit_get_value(
+        &mut self,
+        terms: Vec<<Self::V as Smt2Visitor>::Term>,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_get_value(terms);
+        self.process_command(value)
+    }
+    fn visit_pop(&mut self, level: Numeral) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_pop(level);
+        self.process_command(value)
+    }
+    fn visit_push(&mut self, level: Numeral) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_push(level);
+        self.process_command(value)
+    }
+    fn visit_reset(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_reset();
+        self.process_command(value)
+    }
+    fn visit_reset_assertions(&mut self) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_reset_assertions();
+        self.process_command(value)
+    }
+    fn visit_set_info(
+        &mut self,
+        keyword: <Self::V as Smt2Visitor>::Keyword,
+        value: AttributeValue<
+            <Self::V as Smt2Visitor>::Constant,
+            <Self::V as Smt2Visitor>::Symbol,
+            <Self::V as Smt2Visitor>::SExpr,
+        >,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_set_info(keyword, value);
+        self.process_command(value)
+    }
+    fn visit_set_logic(
+        &mut self,
+        symbol: <Self::V as Smt2Visitor>::Symbol,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_set_logic(symbol);
+        self.process_command(value)
+    }
+    fn visit_set_option(
+        &mut self,
+        keyword: <Self::V as Smt2Visitor>::Keyword,
+        value: AttributeValue<
+            <Self::V as Smt2Visitor>::Constant,
+            <Self::V as Smt2Visitor>::Symbol,
+            <Self::V as Smt2Visitor>::SExpr,
+        >,
+    ) -> <Self::V as Smt2Visitor>::Command {
+        let value = self.visitor().visit_set_option(keyword, value);
+        self.process_command(value)
+    }
 }
 
-impl<V, F1, F2, F3, F4, F5, F6, F7, F8> ConstantVisitor
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> ConstantVisitor for R
 where
-    V: ConstantVisitor,
-    F1: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Constant;
 
     fn visit_numeral_constant(&mut self, value: Numeral) -> Self::T {
-        let value = self.visitor.visit_numeral_constant(value);
-        (self.f_constant)(value)
+        self.visit_numeral_constant(value)
     }
     fn visit_decimal_constant(&mut self, value: Decimal) -> Self::T {
-        let value = self.visitor.visit_decimal_constant(value);
-        (self.f_constant)(value)
+        self.visit_decimal_constant(value)
     }
     fn visit_hexadecimal_constant(&mut self, value: Hexadecimal) -> Self::T {
-        let value = self.visitor.visit_hexadecimal_constant(value);
-        (self.f_constant)(value)
+        self.visit_hexadecimal_constant(value)
     }
     fn visit_binary_constant(&mut self, value: Binary) -> Self::T {
-        let value = self.visitor.visit_binary_constant(value);
-        (self.f_constant)(value)
+        self.visit_binary_constant(value)
     }
     fn visit_string_constant(&mut self, value: String) -> Self::T {
-        let value = self.visitor.visit_string_constant(value);
-        (self.f_constant)(value)
+        self.visit_string_constant(value)
     }
 }
 
-impl<V, F1, F2, F3, F4, F5, F6, F7, F8> SymbolVisitor
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> SymbolVisitor for R
 where
-    V: SymbolVisitor,
-    F2: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Symbol;
 
     fn visit_symbol(&mut self, value: String) -> Self::T {
-        let value = self.visitor.visit_symbol(value);
-        (self.f_symbol)(value)
+        self.visit_symbol(value)
     }
 }
 
-impl<V, F1, F2, F3, F4, F5, F6, F7, F8> KeywordVisitor
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> KeywordVisitor for R
 where
-    V: KeywordVisitor,
-    F3: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Keyword;
 
     fn visit_keyword(&mut self, value: String) -> Self::T {
-        let value = self.visitor.visit_keyword(value);
-        (self.f_keyword)(value)
+        self.visit_keyword(value)
     }
 }
 
-impl<V, Constant, Symbol, Keyword, F1, F2, F3, F4, F5, F6, F7, F8>
-    SExprVisitor<Constant, Symbol, Keyword> for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> SExprVisitor<V::Constant, V::Symbol, V::Keyword> for R
 where
-    V: SExprVisitor<Constant, Symbol, Keyword>,
-    F4: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::SExpr;
 
-    fn visit_constant_s_expr(&mut self, value: Constant) -> Self::T {
-        let value = self.visitor.visit_constant_s_expr(value);
-        (self.f_s_expr)(value)
+    fn visit_constant_s_expr(&mut self, value: V::Constant) -> Self::T {
+        self.visit_constant_s_expr(value)
     }
 
-    fn visit_symbol_s_expr(&mut self, value: Symbol) -> Self::T {
-        let value = self.visitor.visit_symbol_s_expr(value);
-        (self.f_s_expr)(value)
+    fn visit_symbol_s_expr(&mut self, value: V::Symbol) -> Self::T {
+        self.visit_symbol_s_expr(value)
     }
 
-    fn visit_keyword_s_expr(&mut self, value: Keyword) -> Self::T {
-        let value = self.visitor.visit_keyword_s_expr(value);
-        (self.f_s_expr)(value)
+    fn visit_keyword_s_expr(&mut self, value: V::Keyword) -> Self::T {
+        self.visit_keyword_s_expr(value)
     }
 
     fn visit_application_s_expr(&mut self, values: Vec<Self::T>) -> Self::T {
-        let value = self.visitor.visit_application_s_expr(values);
-        (self.f_s_expr)(value)
+        self.visit_application_s_expr(values)
     }
 }
 
-impl<V, Symbol, F1, F2, F3, F4, F5, F6, F7, F8> SortVisitor<Symbol>
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> SortVisitor<V::Symbol> for R
 where
-    V: SortVisitor<Symbol>,
-    F5: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Sort;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier<Symbol>) -> Self::T {
-        let value = self.visitor.visit_simple_sort(identifier);
-        (self.f_sort)(value)
+    fn visit_simple_sort(&mut self, identifier: Identifier<V::Symbol>) -> Self::T {
+        self.visit_simple_sort(identifier)
     }
 
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier<Symbol>,
+        identifier: Identifier<V::Symbol>,
         parameters: Vec<Self::T>,
     ) -> Self::T {
-        let value = self
-            .visitor
-            .visit_parameterized_sort(identifier, parameters);
-        (self.f_sort)(value)
+        self.visit_parameterized_sort(identifier, parameters)
     }
 }
 
-impl<V, Identifier, Sort, F1, F2, F3, F4, F5, F6, F7, F8> QualIdentifierVisitor<Identifier, Sort>
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> QualIdentifierVisitor<Identifier<V::Symbol>, V::Sort> for R
 where
-    V: QualIdentifierVisitor<Identifier, Sort>,
-    F6: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::QualIdentifier;
 
-    fn visit_simple_identifier(&mut self, identifier: Identifier) -> Self::T {
-        let value = self.visitor.visit_simple_identifier(identifier);
-        (self.f_qual_identifier)(value)
+    fn visit_simple_identifier(&mut self, identifier: Identifier<V::Symbol>) -> Self::T {
+        self.visit_simple_identifier(identifier)
     }
 
-    fn visit_sorted_identifier(&mut self, identifier: Identifier, sort: Sort) -> Self::T {
-        let value = self.visitor.visit_sorted_identifier(identifier, sort);
-        (self.f_qual_identifier)(value)
+    fn visit_sorted_identifier(
+        &mut self,
+        identifier: Identifier<V::Symbol>,
+        sort: V::Sort,
+    ) -> Self::T {
+        self.visit_sorted_identifier(identifier, sort)
     }
 }
 
-impl<V, Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort, F1, F2, F3, F4, F5, F6, F7, F8>
-    TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> TermVisitor<V::Constant, V::QualIdentifier, V::Keyword, V::SExpr, V::Symbol, V::Sort>
+    for R
 where
-    V: TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>,
-    F7: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Term;
 
-    fn visit_constant(&mut self, constant: Constant) -> Self::T {
-        let value = self.visitor.visit_constant(constant);
-        (self.f_term)(value)
+    fn visit_constant(&mut self, constant: V::Constant) -> Self::T {
+        self.visit_constant(constant)
     }
 
-    fn visit_qual_identifier(&mut self, qual_identifier: QualIdentifier) -> Self::T {
-        let value = self.visitor.visit_qual_identifier(qual_identifier);
-        (self.f_term)(value)
+    fn visit_qual_identifier(&mut self, qual_identifier: V::QualIdentifier) -> Self::T {
+        self.visit_qual_identifier(qual_identifier)
     }
 
     fn visit_application(
         &mut self,
-        qual_identifier: QualIdentifier,
+        qual_identifier: V::QualIdentifier,
         arguments: Vec<Self::T>,
     ) -> Self::T {
-        let value = self.visitor.visit_application(qual_identifier, arguments);
-        (self.f_term)(value)
+        self.visit_application(qual_identifier, arguments)
     }
 
-    fn visit_let(&mut self, var_bindings: Vec<(Symbol, Self::T)>, term: Self::T) -> Self::T {
-        let value = self.visitor.visit_let(var_bindings, term);
-        (self.f_term)(value)
+    fn visit_let(&mut self, var_bindings: Vec<(V::Symbol, Self::T)>, term: Self::T) -> Self::T {
+        self.visit_let(var_bindings, term)
     }
 
-    fn visit_forall(&mut self, vars: Vec<(Symbol, Sort)>, term: Self::T) -> Self::T {
-        let value = self.visitor.visit_forall(vars, term);
-        (self.f_term)(value)
+    fn visit_forall(&mut self, vars: Vec<(V::Symbol, V::Sort)>, term: Self::T) -> Self::T {
+        self.visit_forall(vars, term)
     }
 
-    fn visit_exists(&mut self, vars: Vec<(Symbol, Sort)>, term: Self::T) -> Self::T {
-        let value = self.visitor.visit_exists(vars, term);
-        (self.f_term)(value)
+    fn visit_exists(&mut self, vars: Vec<(V::Symbol, V::Sort)>, term: Self::T) -> Self::T {
+        self.visit_exists(vars, term)
     }
 
-    fn visit_match(&mut self, term: Self::T, cases: Vec<(Vec<Symbol>, Self::T)>) -> Self::T {
-        let value = self.visitor.visit_match(term, cases);
-        (self.f_term)(value)
+    fn visit_match(&mut self, term: Self::T, cases: Vec<(Vec<V::Symbol>, Self::T)>) -> Self::T {
+        self.visit_match(term, cases)
     }
 
     fn visit_attributes(
         &mut self,
         term: Self::T,
-        attributes: Vec<(Keyword, AttributeValue<Constant, Symbol, SExpr>)>,
+        attributes: Vec<(V::Keyword, AttributeValue<V::Constant, V::Symbol, V::SExpr>)>,
     ) -> Self::T {
-        let value = self.visitor.visit_attributes(term, attributes);
-        (self.f_term)(value)
+        self.visit_attributes(term, attributes)
     }
 }
 
-impl<V, Term, Symbol, Sort, Keyword, Constant, SExpr, F1, F2, F3, F4, F5, F6, F7, F8>
-    CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr>
-    for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> CommandVisitor<V::Term, V::Symbol, V::Sort, V::Keyword, V::Constant, V::SExpr> for R
 where
-    V: CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr>,
-    F8: FnMut(V::T) -> V::T,
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
 {
-    type T = V::T;
+    type T = V::Command;
 
-    fn visit_assert(&mut self, term: Term) -> Self::T {
-        let value = self.visitor.visit_assert(term);
-        (self.f_command)(value)
+    fn visit_assert(&mut self, term: V::Term) -> Self::T {
+        self.visit_assert(term)
     }
 
     fn visit_check_sat(&mut self) -> Self::T {
-        let value = self.visitor.visit_check_sat();
-        (self.f_command)(value)
+        self.visit_check_sat()
     }
 
-    fn visit_check_sat_assuming(&mut self, literals: Vec<(Symbol, bool)>) -> Self::T {
-        let value = self.visitor.visit_check_sat_assuming(literals);
-        (self.f_command)(value)
+    fn visit_check_sat_assuming(&mut self, literals: Vec<(V::Symbol, bool)>) -> Self::T {
+        self.visit_check_sat_assuming(literals)
     }
 
-    fn visit_declare_const(&mut self, symbol: Symbol, sort: Sort) -> Self::T {
-        let value = self.visitor.visit_declare_const(symbol, sort);
-        (self.f_command)(value)
+    fn visit_declare_const(&mut self, symbol: V::Symbol, sort: V::Sort) -> Self::T {
+        self.visit_declare_const(symbol, sort)
     }
 
     fn visit_declare_datatype(
         &mut self,
-        symbol: Symbol,
-        datatype: DatatypeDec<Symbol, Sort>,
+        symbol: V::Symbol,
+        datatype: DatatypeDec<V::Symbol, V::Sort>,
     ) -> Self::T {
-        let value = self.visitor.visit_declare_datatype(symbol, datatype);
-        (self.f_command)(value)
+        self.visit_declare_datatype(symbol, datatype)
     }
 
     fn visit_declare_datatypes(
         &mut self,
-        datatypes: Vec<(Symbol, Numeral, DatatypeDec<Symbol, Sort>)>,
+        datatypes: Vec<(V::Symbol, Numeral, DatatypeDec<V::Symbol, V::Sort>)>,
     ) -> Self::T {
-        let value = self.visitor.visit_declare_datatypes(datatypes);
-        (self.f_command)(value)
+        self.visit_declare_datatypes(datatypes)
     }
 
-    fn visit_declare_fun(&mut self, symbol: Symbol, parameters: Vec<Sort>, sort: Sort) -> Self::T {
-        let value = self.visitor.visit_declare_fun(symbol, parameters, sort);
-        (self.f_command)(value)
+    fn visit_declare_fun(
+        &mut self,
+        symbol: V::Symbol,
+        parameters: Vec<V::Sort>,
+        sort: V::Sort,
+    ) -> Self::T {
+        self.visit_declare_fun(symbol, parameters, sort)
     }
 
-    fn visit_declare_sort(&mut self, symbol: Symbol, arity: Numeral) -> Self::T {
-        let value = self.visitor.visit_declare_sort(symbol, arity);
-        (self.f_command)(value)
+    fn visit_declare_sort(&mut self, symbol: V::Symbol, arity: Numeral) -> Self::T {
+        self.visit_declare_sort(symbol, arity)
     }
 
-    fn visit_define_fun(&mut self, sig: FunctionDec<Symbol, Sort>, term: Term) -> Self::T {
-        let value = self.visitor.visit_define_fun(sig, term);
-        (self.f_command)(value)
+    fn visit_define_fun(&mut self, sig: FunctionDec<V::Symbol, V::Sort>, term: V::Term) -> Self::T {
+        self.visit_define_fun(sig, term)
     }
 
-    fn visit_define_fun_rec(&mut self, sig: FunctionDec<Symbol, Sort>, term: Term) -> Self::T {
-        let value = self.visitor.visit_define_fun_rec(sig, term);
-        (self.f_command)(value)
+    fn visit_define_fun_rec(
+        &mut self,
+        sig: FunctionDec<V::Symbol, V::Sort>,
+        term: V::Term,
+    ) -> Self::T {
+        self.visit_define_fun_rec(sig, term)
     }
 
-    fn visit_define_funs_rec(&mut self, funs: Vec<(FunctionDec<Symbol, Sort>, Term)>) -> Self::T {
-        let value = self.visitor.visit_define_funs_rec(funs);
-        (self.f_command)(value)
+    fn visit_define_funs_rec(
+        &mut self,
+        funs: Vec<(FunctionDec<V::Symbol, V::Sort>, V::Term)>,
+    ) -> Self::T {
+        self.visit_define_funs_rec(funs)
     }
 
     fn visit_define_sort(
         &mut self,
-        symbol: Symbol,
-        parameters: Vec<Symbol>,
-        sort: Sort,
+        symbol: V::Symbol,
+        parameters: Vec<V::Symbol>,
+        sort: V::Sort,
     ) -> Self::T {
-        let value = self.visitor.visit_define_sort(symbol, parameters, sort);
-        (self.f_command)(value)
+        self.visit_define_sort(symbol, parameters, sort)
     }
 
     fn visit_echo(&mut self, message: String) -> Self::T {
-        let value = self.visitor.visit_echo(message);
-        (self.f_command)(value)
+        self.visit_echo(message)
     }
 
     fn visit_exit(&mut self) -> Self::T {
-        let value = self.visitor.visit_exit();
-        (self.f_command)(value)
+        self.visit_exit()
     }
 
     fn visit_get_assertions(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_assertions();
-        (self.f_command)(value)
+        self.visit_get_assertions()
     }
 
     fn visit_get_assignment(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_assignment();
-        (self.f_command)(value)
+        self.visit_get_assignment()
     }
 
-    fn visit_get_info(&mut self, flag: Keyword) -> Self::T {
-        let value = self.visitor.visit_get_info(flag);
-        (self.f_command)(value)
+    fn visit_get_info(&mut self, flag: V::Keyword) -> Self::T {
+        self.visit_get_info(flag)
     }
 
     fn visit_get_model(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_model();
-        (self.f_command)(value)
+        self.visit_get_model()
     }
 
-    fn visit_get_option(&mut self, keyword: Keyword) -> Self::T {
-        let value = self.visitor.visit_get_option(keyword);
-        (self.f_command)(value)
+    fn visit_get_option(&mut self, keyword: V::Keyword) -> Self::T {
+        self.visit_get_option(keyword)
     }
 
     fn visit_get_proof(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_proof();
-        (self.f_command)(value)
+        self.visit_get_proof()
     }
 
     fn visit_get_unsat_assumptions(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_unsat_assumptions();
-        (self.f_command)(value)
+        self.visit_get_unsat_assumptions()
     }
 
     fn visit_get_unsat_core(&mut self) -> Self::T {
-        let value = self.visitor.visit_get_unsat_core();
-        (self.f_command)(value)
+        self.visit_get_unsat_core()
     }
 
-    fn visit_get_value(&mut self, terms: Vec<Term>) -> Self::T {
-        let value = self.visitor.visit_get_value(terms);
-        (self.f_command)(value)
+    fn visit_get_value(&mut self, terms: Vec<V::Term>) -> Self::T {
+        self.visit_get_value(terms)
     }
 
     fn visit_pop(&mut self, level: Numeral) -> Self::T {
-        let value = self.visitor.visit_pop(level);
-        (self.f_command)(value)
+        self.visit_pop(level)
     }
 
     fn visit_push(&mut self, level: Numeral) -> Self::T {
-        let value = self.visitor.visit_push(level);
-        (self.f_command)(value)
+        self.visit_push(level)
     }
 
     fn visit_reset(&mut self) -> Self::T {
-        let value = self.visitor.visit_reset();
-        (self.f_command)(value)
+        self.visit_reset()
     }
 
     fn visit_reset_assertions(&mut self) -> Self::T {
-        let value = self.visitor.visit_reset_assertions();
-        (self.f_command)(value)
+        self.visit_reset_assertions()
     }
 
     fn visit_set_info(
         &mut self,
-        keyword: Keyword,
-        value: AttributeValue<Constant, Symbol, SExpr>,
+        keyword: V::Keyword,
+        value: AttributeValue<V::Constant, V::Symbol, V::SExpr>,
     ) -> Self::T {
-        let value = self.visitor.visit_set_info(keyword, value);
-        (self.f_command)(value)
+        self.visit_set_info(keyword, value)
     }
 
-    fn visit_set_logic(&mut self, symbol: Symbol) -> Self::T {
-        let value = self.visitor.visit_set_logic(symbol);
-        (self.f_command)(value)
+    fn visit_set_logic(&mut self, symbol: V::Symbol) -> Self::T {
+        self.visit_set_logic(symbol)
     }
 
     fn visit_set_option(
         &mut self,
-        keyword: Keyword,
-        value: AttributeValue<Constant, Symbol, SExpr>,
+        keyword: V::Keyword,
+        value: AttributeValue<V::Constant, V::Symbol, V::SExpr>,
     ) -> Self::T {
-        let value = self.visitor.visit_set_option(keyword, value);
-        (self.f_command)(value)
+        self.visit_set_option(keyword, value)
     }
 }
 
-impl<V, F1, F2, F3, F4, F5, F6, F7, F8> Smt2Visitor for Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8>
+impl<R, V> Smt2Visitor for R
 where
+    R: Rewriter<V = V>,
     V: Smt2Visitor,
-    F1: FnMut(V::Constant) -> V::Constant,
-    F2: FnMut(V::Symbol) -> V::Symbol,
-    F3: FnMut(V::Keyword) -> V::Keyword,
-    F4: FnMut(V::SExpr) -> V::SExpr,
-    F5: FnMut(V::Sort) -> V::Sort,
-    F6: FnMut(V::QualIdentifier) -> V::QualIdentifier,
-    F7: FnMut(V::Term) -> V::Term,
-    F8: FnMut(V::Command) -> V::Command,
 {
     type Constant = V::Constant;
     type QualIdentifier = V::QualIdentifier;
@@ -416,239 +790,6 @@ where
     type Term = V::Term;
     type Command = V::Command;
 }
-
-impl<V, F1, F2, F3, F4, F5, F6, F7, F8> Rewriter<V, F1, F2, F3, F4, F5, F6, F7, F8> {
-    pub fn into_inner(self) -> V {
-        self.visitor
-    }
-}
-
-fn identity<T>(x: T) -> T {
-    x
-}
-
-type Id<T> = fn(T) -> T;
-
-/// Extend visitors with methods to create a `Rewriter`.
-pub trait Smt2VisitorExt: Smt2Visitor + Sized {
-    fn fix_constants_with<F>(
-        self,
-        f_constant: F,
-    ) -> Rewriter<
-        Self,
-        F,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_symbols_with<F>(
-        self,
-        f_symbol: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        F,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_keywords_with<F>(
-        self,
-        f_keyword: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        F,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_s_exprs_with<F>(
-        self,
-        f_s_expr: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        F,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_sorts_with<F>(
-        self,
-        f_sort: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        F,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_qual_identifiers_with<F>(
-        self,
-        f_qual_identifier: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        F,
-        Id<Self::Term>,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier,
-            f_term: identity,
-            f_command: identity,
-        }
-    }
-
-    fn fix_terms_with<F>(
-        self,
-        f_term: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        F,
-        Id<Self::Command>,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term,
-            f_command: identity,
-        }
-    }
-
-    fn fix_commands_with<F>(
-        self,
-        f_command: F,
-    ) -> Rewriter<
-        Self,
-        Id<Self::Constant>,
-        Id<Self::Symbol>,
-        Id<Self::Keyword>,
-        Id<Self::SExpr>,
-        Id<Self::Sort>,
-        Id<Self::QualIdentifier>,
-        Id<Self::Term>,
-        F,
-    > {
-        Rewriter {
-            visitor: self,
-            f_constant: identity,
-            f_symbol: identity,
-            f_keyword: identity,
-            f_s_expr: identity,
-            f_sort: identity,
-            f_qual_identifier: identity,
-            f_term: identity,
-            f_command,
-        }
-    }
-}
-
-impl<V> Smt2VisitorExt for V where V: Smt2Visitor + Sized {}
 
 #[test]
 fn test_term_rewriter() {
@@ -693,10 +834,23 @@ fn test_term_rewriter() {
         },
     };
 
-    let mut rewrite =
-        crate::concrete::SyntaxBuilder.fix_symbols_with(|x: Symbol| Symbol(x.0 + "__"));
+    #[derive(Default)]
+    struct Builder(crate::concrete::SyntaxBuilder);
+    impl Rewriter for Builder {
+        type V = crate::concrete::SyntaxBuilder;
 
-    let command2 = command.clone().accept(&mut rewrite);
+        fn visitor(&mut self) -> &mut Self::V {
+            &mut self.0
+        }
+
+        fn process_symbol(&mut self, s: Symbol) -> Symbol {
+            Symbol(s.0 + "__")
+        }
+    }
+
+    let mut builder = Builder::default();
+
+    let command2 = command.clone().accept(&mut builder);
     let command3 = Command::Assert {
         term: Term::Let {
             var_bindings: vec![(
@@ -737,8 +891,23 @@ fn test_term_rewriter() {
 
     assert_eq!(command2, command3);
 
-    let mut rewrite = crate::concrete::SyntaxBuilder.fix_commands_with(|_: Command| Command::Exit);
-    let command2 = command.clone().accept(&mut rewrite);
+    #[derive(Default)]
+    struct Builder2(crate::concrete::SyntaxBuilder);
+    impl Rewriter for Builder2 {
+        type V = crate::concrete::SyntaxBuilder;
+
+        fn visitor(&mut self) -> &mut Self::V {
+            &mut self.0
+        }
+
+        fn visit_assert(&mut self, _: Term) -> Command {
+            Command::Exit
+        }
+    }
+
+    let mut builder = Builder2::default();
+
+    let command2 = command.clone().accept(&mut builder);
     let command3 = Command::Exit;
     assert_eq!(command2, command3);
 }
