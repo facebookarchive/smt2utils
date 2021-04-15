@@ -187,7 +187,7 @@ pub enum Command {
 }
 
 /// An implementation of [`Smt2Visitor`] that returns concrete syntax values.
-#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SyntaxBuilder;
 
 impl ConstantVisitor for SyntaxBuilder {
