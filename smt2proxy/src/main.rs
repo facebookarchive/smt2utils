@@ -11,7 +11,6 @@ use structopt::StructOpt;
 
 /// Proxy for SMT2 commands. Compatible with the command-line syntax of Z3.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "smt2proxy")]
 struct Options {
     /// Use SMT2 input format (ignored, always true).
     #[structopt(long)]
