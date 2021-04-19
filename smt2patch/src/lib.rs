@@ -4,10 +4,16 @@
 //! The `stm2patch` library provides the SMT2 "patching" functionalities and
 //! configurations used by the binary tool `smt2patch`.
 
-use smt2parser::concrete::*;
-use smt2parser::visitors::{CommandVisitor, TermVisitor};
-use std::str::FromStr;
-use std::{collections::HashSet, io::Write, path::Path};
+use smt2parser::{
+    concrete::*,
+    visitors::{CommandVisitor, TermVisitor},
+};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    path::Path,
+    str::FromStr,
+};
 use structopt::StructOpt;
 
 /// Configuration for the SMT2 rewriting operations.
@@ -21,6 +27,9 @@ pub struct RewriterConfig {
 
     #[structopt(long)]
     tag_quantifiers: bool,
+
+    #[structopt(long, parse(try_from_str = try_parse_weights))]
+    set_weights: Option<HashMap<String, usize>>,
 }
 
 fn parse_clauses(src: &str) -> HashSet<String> {
@@ -31,6 +40,18 @@ fn parse_clauses(src: &str) -> HashSet<String> {
         &src[..]
     };
     src.split(' ').map(String::from).collect()
+}
+
+fn try_parse_weights(src: &str) -> Result<HashMap<String, usize>, std::num::ParseIntError> {
+    let src = src.trim();
+    src.split(' ')
+        .map(|s| {
+            let mut items = s.splitn(2, '=');
+            let key = items.next().unwrap();
+            let value = items.next().unwrap_or("0").parse()?;
+            Ok((key.to_string(), value))
+        })
+        .collect()
 }
 
 /// State of the SMT2 rewriter.
@@ -70,6 +91,7 @@ impl Rewriter {
         Symbol(s)
     }
 
+    // Hack: This value is returned when we mean to discard a command.
     #[inline]
     fn assert_true() -> Command {
         Command::Assert {
@@ -82,18 +104,49 @@ impl Rewriter {
     }
 
     fn get_clause_name(term: &Term) -> Option<&Symbol> {
+        match Self::get_attribute(term, "named") {
+            Some(AttributeValue::Symbol(s)) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn get_quantifier_name(term: &Term) -> Option<&Symbol> {
+        match Self::get_attribute(term, "qid") {
+            Some(AttributeValue::Symbol(s)) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn get_attribute<'a>(term: &'a Term, key: &str) -> Option<&'a AttributeValue> {
         match term {
             Term::Attributes { attributes, .. } => {
                 for (k, v) in attributes {
-                    if &k.0 == "named" {
-                        if let AttributeValue::Symbol(s) = v {
-                            return Some(s);
-                        }
+                    if &k.0 == key {
+                        return Some(v);
                     }
                 }
                 None
             }
             _ => None,
+        }
+    }
+
+    fn set_attribute(mut term: Term, key: String, value: AttributeValue) -> Term {
+        match &mut term {
+            Term::Attributes { attributes, .. } => {
+                for (k, v) in attributes.iter_mut() {
+                    if &k.0 == &key {
+                        *v = value;
+                        return term;
+                    }
+                }
+                attributes.push((Keyword(key), value));
+                term
+            }
+            _ => Term::Attributes {
+                term: Box::new(term),
+                attributes: vec![(Keyword(key), value)],
+            },
         }
     }
 }
@@ -121,25 +174,29 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
     }
 
     fn visit_forall(&mut self, vars: Vec<(Symbol, Sort)>, term: Term) -> Term {
-        let term = if !self.config.tag_quantifiers {
+        let name = Self::get_quantifier_name(&term);
+        let need_name = name.is_none();
+        let name = name.cloned().unwrap_or_else(|| self.make_quantifier_name());
+        // Add name if needed.
+        let term = if !self.config.tag_quantifiers || !need_name {
             term
         } else {
-            match &term {
-                Term::Attributes { attributes, .. }
-                    if attributes.iter().any(|(k, _)| &k.0 == "qid") =>
-                {
-                    term
-                }
-                _ => {
-                    let name = self.make_quantifier_name();
-                    Term::Attributes {
-                        term: Box::new(term),
-                        attributes: vec![(
-                            Keyword("qid".to_string()),
-                            AttributeValue::Symbol(name),
-                        )],
-                    }
-                }
+            Self::set_attribute(
+                term,
+                "qid".to_string(),
+                AttributeValue::Symbol(name.clone()),
+            )
+        };
+        // Add weight if needed.
+        let term = match &self.config.set_weights {
+            None => term,
+            Some(weights) => {
+                let w = *weights.get(&name.0).unwrap_or(&0);
+                Self::set_attribute(
+                    term,
+                    "weight".to_string(),
+                    AttributeValue::Constant(Constant::Numeral(w.into())),
+                )
             }
         };
         let value = self.visitor().visit_forall(vars, term);
@@ -157,10 +214,7 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
             }
         }
         let term = if need_name {
-            Term::Attributes {
-                term: Box::new(term),
-                attributes: vec![(Keyword("named".to_string()), AttributeValue::Symbol(name))],
-            }
+            Self::set_attribute(term, "named".to_string(), AttributeValue::Symbol(name))
         } else {
             term
         };
