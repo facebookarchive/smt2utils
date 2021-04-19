@@ -104,10 +104,15 @@ impl Rewriter {
     }
 
     fn get_clause_name(term: &Term) -> Option<&Symbol> {
-        match Self::get_attribute(term, "named") {
-            Some(AttributeValue::Symbol(s)) => Some(s),
-            _ => None,
+        if let Some(AttributeValue::Symbol(s)) = Self::get_attribute(term, "named") {
+            return Some(s);
         }
+        if let Term::Forall { term, .. } = term {
+            if let Some(s) = Self::get_quantifier_name(term) {
+                return Some(s);
+            }
+        }
+        None
     }
 
     fn get_quantifier_name(term: &Term) -> Option<&Symbol> {
@@ -174,11 +179,11 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
     }
 
     fn visit_forall(&mut self, vars: Vec<(Symbol, Sort)>, term: Term) -> Term {
-        let name = Self::get_quantifier_name(&term);
-        let need_name = name.is_none();
-        let name = name.cloned().unwrap_or_else(|| self.make_quantifier_name());
+        let name = Self::get_quantifier_name(&term)
+            .cloned()
+            .unwrap_or_else(|| self.make_quantifier_name());
         // Add name if needed.
-        let term = if !self.config.tag_quantifiers || !need_name {
+        let term = if !self.config.tag_quantifiers {
             term
         } else {
             Self::set_attribute(
@@ -204,16 +209,16 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
     }
 
     fn visit_assert(&mut self, term: Term) -> Command {
-        let name = Self::get_clause_name(&term);
-        let need_name = self.config.get_unsat_core && name.is_none();
-        let name = name.cloned().unwrap_or_else(|| self.make_clause_name());
+        let name = Self::get_clause_name(&term)
+            .cloned()
+            .unwrap_or_else(|| self.make_clause_name());
         if let Some(list) = &self.config.keep_only_clauses {
             if !list.contains(&name.0) {
                 // Discard clause.
                 return Self::assert_true();
             }
         }
-        let term = if need_name {
+        let term = if self.config.get_unsat_core {
             Self::set_attribute(term, "named".to_string(), AttributeValue::Symbol(name))
         } else {
             term
