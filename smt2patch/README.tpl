@@ -1,13 +1,11 @@
 # {{crate}}
 
-[![smt2proxy on crates.io](https://img.shields.io/crates/v/smt2proxy)](https://crates.io/crates/smt2proxy)
-[![Documentation](https://docs.rs/smt2proxy/badge.svg)](https://docs.rs/smt2proxy/)
+[![smt2patch on crates.io](https://img.shields.io/crates/v/smt2patch)](https://crates.io/crates/smt2patch)
+[![Documentation](https://docs.rs/smt2patch/badge.svg)](https://docs.rs/smt2patch/)
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](../LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](../LICENSE-MIT)
 
-`smt2proxy` is an experimental binary tool to intercept and pre-process SMT2
-  commands before there are send to an SMT solver. It acts as a command-line replacement
-  for the SMT solver binary. Currently, only Z3 is supported.
+`smt2patch` is an experimental binary tool to modify SMT2 files.
 
 {{readme}}
 

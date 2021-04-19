@@ -5,9 +5,9 @@
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](../LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](../LICENSE-MIT)
 
-`smt2patch` is an experimental binary tool to patch SMT2 files.
+`smt2patch` is an experimental binary tool to modify SMT2 files.
 
-The `stm2patch` library provides the command processing functionalities and
+The `stm2patch` library provides the SMT2 "patching" functionalities and
 configurations used by the binary tool `smt2patch`.
 
 ## Contributing
