@@ -20,6 +20,8 @@ as Z3 and CVC4.
 * [z3tracer](z3tracer) is an experimental library and tool to process Z3 logs obtained by
   passing the options `trace=true proof=true`.
 
+* [smt2patch](smt2patch) is an experimental library and tool to modify SMT files.
+
 The code in this repository is still under active development.
 
 ## Contributing
