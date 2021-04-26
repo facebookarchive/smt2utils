@@ -55,8 +55,8 @@ pub struct TermData {
     pub term: Term,
     /// QIs that made this term an active "enode".
     pub enode_qi_dependencies: BTreeSet<QiKey>,
-    /// Last truth assignment, if any.
-    pub assignment: Option<bool>,
+    /// Truth assignments.
+    pub assignments: Vec<Assignment>,
     /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QiKey>,
     /// Timestamps (line numbers in Z3 logs) of instantiations.
@@ -65,6 +65,24 @@ pub struct TermData {
     pub proofs: Vec<Ident>,
     /// Track the relative creation time of this term. Currently, this is the line
     /// number in the Z3 log.
+    pub timestamp: usize,
+}
+
+/// Information on a truth assignment.
+#[derive(Debug, Clone)]
+pub struct Assignment {
+    /// Value.
+    pub sign: bool,
+    /// Relative creation time (currently, the line number in the Z3 log).
+    pub timestamp: usize,
+}
+
+/// Information on a conflict.
+#[derive(Debug, Clone)]
+pub struct Conflict {
+    /// The conflict clause that was proven.
+    pub lits: Vec<Literal>,
+    /// Relative creation time (currently, the line number in the Z3 log).
     pub timestamp: usize,
 }
 
@@ -93,6 +111,18 @@ pub struct Model {
     current_instances: Vec<QuantInstanceData>,
     // Number of Z3 log callbacks already executed.
     processed_logs: usize,
+    // Conflicts.
+    conflicts: Vec<Conflict>,
+}
+
+impl Assignment {
+    pub fn as_str(&self) -> &'static str {
+        if self.sign {
+            "true"
+        } else {
+            "false"
+        }
+    }
 }
 
 impl Model {
@@ -105,6 +135,7 @@ impl Model {
             instantiations: BTreeMap::new(),
             current_instances: Vec::new(),
             processed_logs: 0,
+            conflicts: Vec::new(),
         }
     }
 
@@ -131,6 +162,11 @@ impl Model {
     /// Number of Z3 logs that were processed.
     pub fn processed_logs(&self) -> usize {
         self.processed_logs
+    }
+
+    /// All conflicts in the model.
+    pub fn conflicts(&self) -> &Vec<Conflict> {
+        &self.conflicts
     }
 
     /// Construct a max-heap of the (most) instantiated quantified terms.
@@ -404,7 +440,7 @@ impl Model {
                     name: id.namespace.clone(),
                 },
                 enode_qi_dependencies: BTreeSet::new(),
-                assignment: None,
+                assignments: Vec::new(),
                 instantiations: Vec::new(),
                 instantiation_timestamps: Vec::new(),
                 proofs: Vec::new(),
@@ -423,7 +459,7 @@ impl Model {
         let data = self.term_data(eid)?;
         // Normal case.
         if let Some([eid1, eid2]) = data.term.matches_equality() {
-            if data.proofs.is_empty() && data.assignment.is_none() {
+            if data.proofs.is_empty() && data.assignments.is_empty() {
                 return Err(RawError::MissingProof(eid.clone()));
             }
             if (&eid1 == id1 && &eid2 == id2) || (&eid1 == id2 && &eid2 == id1) {
@@ -432,9 +468,13 @@ impl Model {
         }
         // Assigned term.
         if eid == id1 {
-            match (data.assignment, self.term(id2)?) {
-                (Some(b), Term::App { name, args, .. })
-                    if args.is_empty() && name.as_str() == if b { "true" } else { "false" } =>
+            match (&data.assignments, self.term(id2)?) {
+                (assignments, Term::App { name, args, .. })
+                    if args.is_empty()
+                        && assignments
+                            .last()
+                            .iter()
+                            .any(|x| x.as_str() == name.as_str()) =>
                 {
                     return Ok(true);
                 }
@@ -517,7 +557,7 @@ impl LogVisitor for &mut Model {
         let data = TermData {
             term,
             enode_qi_dependencies: BTreeSet::new(),
-            assignment: None,
+            assignments: Vec::new(),
             instantiations: Vec::new(),
             instantiation_timestamps: Vec::new(),
             proofs: Vec::new(),
@@ -661,7 +701,11 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             lit.visit(&mut |id| self.check_ident(id))?;
         }
-        self.term_data_mut(&lit.id)?.assignment = Some(lit.sign);
+        let timestamp = self.processed_logs;
+        self.term_data_mut(&lit.id)?.assignments.push(Assignment {
+            sign: lit.sign,
+            timestamp,
+        });
         Ok(())
     }
 
@@ -670,6 +714,10 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             lits.visit(&mut |id| self.check_ident(id))?;
         }
+        self.conflicts.push(Conflict {
+            lits,
+            timestamp: self.processed_logs,
+        });
         Ok(())
     }
 
