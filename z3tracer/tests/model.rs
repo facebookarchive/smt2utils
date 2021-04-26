@@ -59,6 +59,7 @@ fn test_log_file() -> anyhow::Result<()> {
         "(PROOF true-axiom true)"
     );
     assert_eq!(model.instantiations().len(), 21503);
+    assert_eq!(model.conflicts().len(), 49);
     let top_instantiated = model.most_instantiated_terms();
     assert_eq!(top_instantiated.len(), 66);
     let mut top_instantiated: IntoIterSorted<_> = top_instantiated.into();
@@ -87,6 +88,7 @@ fn test_log_file_with_reused_qi_keys() -> anyhow::Result<()> {
     let model = process_file("tests/data/file2.log")?;
     assert_eq!(model.terms().len(), 150031);
     assert_eq!(model.instantiations().len(), 10242);
+    assert_eq!(model.conflicts().len(), 21);
     Ok(())
 }
 
@@ -96,6 +98,7 @@ fn test_log_file_with_no_proofs() -> anyhow::Result<()> {
     let model = process_file("tests/data/file3.log")?;
     assert_eq!(model.terms().len(), 37232);
     assert_eq!(model.instantiations().len(), 11931);
+    assert_eq!(model.conflicts().len(), 125);
     Ok(())
 }
 
