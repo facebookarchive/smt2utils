@@ -53,19 +53,24 @@ pub struct ModelConfig {
 pub struct TermData {
     /// Term definition.
     pub term: Term,
-    /// QIs that made this term an active "enode".
-    pub enode_qi_dependencies: BTreeSet<QiKey>,
-    /// Truth assignments.
-    pub assignments: Vec<Assignment>,
     /// Known instantiations (applicable when `term` is a quantified expression).
     pub instantiations: Vec<QiKey>,
     /// Timestamps (line numbers in Z3 logs) of instantiations.
     pub instantiation_timestamps: Vec<usize>,
-    /// Known proofs of this term (applicable when `term` is a boolean formula).
-    pub proofs: Vec<Ident>,
     /// Track the relative creation time of this term. Currently, this is the line
     /// number in the Z3 log.
     pub timestamp: usize,
+}
+
+/// Scoped information on a term.
+#[derive(Debug, Clone)]
+pub struct ScopedTermData {
+    /// QI that made this term an active "enode", if any.
+    pub enode_qi: Option<QiKey>,
+    /// Truth assignment.
+    pub assignment: Option<Assignment>,
+    /// Known proofs of this term (applicable when `term` is a boolean formula).
+    pub proofs: Vec<Ident>,
 }
 
 /// Information on a truth assignment.
@@ -95,6 +100,8 @@ pub struct Scope {
     pub level: u64,
     /// Index of the parent scope in the model.
     pub parent_index: Option<usize>,
+    /// Scoped data on terms.
+    pub terms: BTreeMap<Ident, ScopedTermData>,
 }
 
 /// Information on a quantifier instance.
@@ -140,6 +147,22 @@ impl Assignment {
     }
 }
 
+impl Scope {
+    pub fn term_data(&self, id: &Ident) -> Option<&ScopedTermData> {
+        self.terms.get(id)
+    }
+
+    fn term_data_mut(&mut self, id: &Ident) -> &mut ScopedTermData {
+        self.terms
+            .entry(id.clone())
+            .or_insert_with(|| ScopedTermData {
+                enode_qi: None,
+                assignment: None,
+                proofs: Vec::new(),
+            })
+    }
+}
+
 impl Model {
     /// Build a new Z3 tracer.
     /// Experimental. Use `Model::default()` instead if possible.
@@ -180,6 +203,16 @@ impl Model {
         &self.conflicts
     }
 
+    /// All (finalized) scopes in the model.
+    pub fn scopes(&self) -> &Vec<Scope> {
+        &self.scopes
+    }
+
+    /// The current scope in the model.
+    pub fn current_scope(&self) -> &Scope {
+        &self.current_scope
+    }
+
     /// Construct a max-heap of the (most) instantiated quantified terms.
     pub fn most_instantiated_terms(&self) -> BinaryHeap<(usize, Ident)> {
         self.terms
@@ -203,6 +236,32 @@ impl Model {
             .ok_or_else(|| RawError::UndefinedIdent(id.clone()))?
             .term;
         Ok(t)
+    }
+
+    pub fn term_assignment(&self, id: &Ident) -> Option<&Assignment> {
+        let mut scope = &self.current_scope;
+        loop {
+            if let Some(data) = scope.term_data(id) {
+                if let Some(a) = &data.assignment {
+                    return Some(a);
+                }
+            }
+            let i = scope.parent_index?;
+            scope = &self.scopes[i];
+        }
+    }
+
+    pub fn term_proof(&self, id: &Ident) -> Option<&Ident> {
+        let mut scope = &self.current_scope;
+        loop {
+            if let Some(data) = scope.term_data(id) {
+                if let Some(p) = data.proofs.last() {
+                    return Some(p);
+                }
+            }
+            let i = scope.parent_index?;
+            scope = &self.scopes[i];
+        }
     }
 
     /// Retrieve a particular term, including metadata.
@@ -450,11 +509,8 @@ impl Model {
                 term: Term::Builtin {
                     name: id.namespace.clone(),
                 },
-                enode_qi_dependencies: BTreeSet::new(),
-                assignments: Vec::new(),
                 instantiations: Vec::new(),
                 instantiation_timestamps: Vec::new(),
-                proofs: Vec::new(),
                 timestamp,
             });
             return Ok(&mut *entry);
@@ -467,10 +523,12 @@ impl Model {
     }
 
     fn check_literal_equality(&self, eid: &Ident, id1: &Ident, id2: &Ident) -> RawResult<bool> {
-        let data = self.term_data(eid)?;
+        let term = self.term(eid)?;
+        let assignment = self.term_assignment(eid);
         // Normal case.
-        if let Some([eid1, eid2]) = data.term.matches_equality() {
-            if data.proofs.is_empty() && data.assignments.is_empty() {
+        if let Some([eid1, eid2]) = term.matches_equality() {
+            let proof = self.term_proof(eid);
+            if proof.is_none() && assignment.is_none() {
                 return Err(RawError::MissingProof(eid.clone()));
             }
             if (&eid1 == id1 && &eid2 == id2) || (&eid1 == id2 && &eid2 == id1) {
@@ -479,13 +537,9 @@ impl Model {
         }
         // Assigned term.
         if eid == id1 {
-            match (&data.assignments, self.term(id2)?) {
-                (assignments, Term::App { name, args, .. })
-                    if args.is_empty()
-                        && assignments
-                            .last()
-                            .iter()
-                            .any(|x| x.as_str() == name.as_str()) =>
+            match (&assignment, self.term(id2)?) {
+                (Some(assignment), Term::App { name, args, .. })
+                    if args.is_empty() && assignment.as_str() == name.as_str() =>
                 {
                     return Ok(true);
                 }
@@ -557,8 +611,10 @@ impl LogVisitor for &mut Model {
             term.visit(&mut |id| self.check_ident(id))?;
         }
         if let Term::Proof { property, .. } = &term {
-            let data = self.term_data_mut(property)?;
-            data.proofs.push(ident.clone());
+            self.current_scope
+                .term_data_mut(property)
+                .proofs
+                .push(ident.clone());
         }
         if self.has_log_consistency_checks()
             && matches!(term, Term::App { .. } | Term::Quant { .. })
@@ -567,11 +623,8 @@ impl LogVisitor for &mut Model {
         }
         let data = TermData {
             term,
-            enode_qi_dependencies: BTreeSet::new(),
-            assignments: Vec::new(),
             instantiations: Vec::new(),
             instantiation_timestamps: Vec::new(),
-            proofs: Vec::new(),
             timestamp: self.processed_logs,
         };
         self.terms.insert(ident, data);
@@ -692,7 +745,8 @@ impl LogVisitor for &mut Model {
             let key = current_instance.key;
             let data = &mut current_instance.data;
             data.enodes.push(id.clone());
-            self.term_data_mut(&id)?.enode_qi_dependencies.insert(key);
+            // TODO check
+            self.current_scope.term_data_mut(&id).enode_qi = Some(key);
         }
         Ok(())
     }
@@ -713,10 +767,12 @@ impl LogVisitor for &mut Model {
             lit.visit(&mut |id| self.check_ident(id))?;
         }
         let timestamp = self.processed_logs;
-        self.term_data_mut(&lit.id)?.assignments.push(Assignment {
+        let assignment = Assignment {
             sign: lit.sign,
             timestamp,
-        });
+        };
+        // TODO check
+        self.current_scope.term_data_mut(&lit.id).assignment = Some(assignment);
         Ok(())
     }
 
@@ -734,10 +790,14 @@ impl LogVisitor for &mut Model {
 
     fn push(&mut self, level: u64) -> RawResult<()> {
         self.processed_logs += 1;
+        if self.has_log_consistency_checks() && level != self.current_scope.level {
+            return Err(RawError::InvalidPush(level));
+        }
         let scope = Scope {
             timestamp: self.processed_logs,
             level: level + 1,
             parent_index: Some(self.scopes.len()),
+            terms: BTreeMap::new(),
         };
         let previous_scope = std::mem::replace(&mut self.current_scope, scope);
         self.scopes.push(previous_scope);
@@ -755,7 +815,7 @@ impl LogVisitor for &mut Model {
         let parent_index = {
             let mut index = self.current_scope.parent_index;
             while let Some(i) = index {
-                if self.scopes[i].level < level {
+                if self.scopes[i].level <= level {
                     break;
                 }
                 index = self.scopes[i].parent_index;
@@ -766,6 +826,7 @@ impl LogVisitor for &mut Model {
             timestamp: self.processed_logs,
             level,
             parent_index,
+            terms: BTreeMap::new(),
         };
         let previous_scope = std::mem::replace(&mut self.current_scope, scope);
         self.scopes.push(previous_scope);
