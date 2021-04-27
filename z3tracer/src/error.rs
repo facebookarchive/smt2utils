@@ -47,6 +47,8 @@ pub enum RawError {
     CannotProcessEquality(Ident, Equality),
     #[error("Cannot check equality {0:?} {1:?}")]
     CannotCheckEquality(Ident, Ident),
+    #[error("Invalid 'push' command {0}")]
+    InvalidPush(u64),
     #[error("Invalid 'pop' command {0} {1}")]
     InvalidPop(u64, u64),
 }
