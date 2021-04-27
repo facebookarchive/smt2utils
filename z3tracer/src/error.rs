@@ -20,7 +20,7 @@ pub enum RawError {
     UnexpectedChar(Option<char>, Vec<char>),
     #[error("Unexpected word: {0} instead of {1:?}")]
     UnexpectedWord(String, Vec<&'static str>),
-    // Parser
+    // Parser & Model
     #[error("Missing identifier")]
     MissingIdentifier,
     #[error("Undefined identifier {0:?}")]
@@ -47,6 +47,8 @@ pub enum RawError {
     CannotProcessEquality(Ident, Equality),
     #[error("Cannot check equality {0:?} {1:?}")]
     CannotCheckEquality(Ident, Ident),
+    #[error("Invalid 'pop' command {0} {1}")]
+    InvalidPop(u64, u64),
 }
 
 /// Record a position in the input stream.
