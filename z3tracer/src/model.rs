@@ -86,6 +86,17 @@ pub struct Conflict {
     pub timestamp: usize,
 }
 
+/// Information on a scope.
+#[derive(Debug, Default, Clone)]
+pub struct Scope {
+    /// Start time.
+    pub timestamp: usize,
+    /// Level.
+    pub level: u64,
+    /// Index of the parent scope in the model.
+    pub parent_index: Option<usize>,
+}
+
 /// Information on a quantifier instance.
 #[derive(Debug, Clone)]
 pub struct QuantInstanceData {
@@ -113,6 +124,10 @@ pub struct Model {
     processed_logs: usize,
     // Conflicts.
     conflicts: Vec<Conflict>,
+    // Scopes.
+    scopes: Vec<Scope>,
+    // Current scope.
+    current_scope: Scope,
 }
 
 impl Assignment {
@@ -131,11 +146,7 @@ impl Model {
     pub fn new(config: ModelConfig) -> Self {
         Self {
             config,
-            terms: BTreeMap::new(),
-            instantiations: BTreeMap::new(),
-            current_instances: Vec::new(),
-            processed_logs: 0,
-            conflicts: Vec::new(),
+            ..Model::default()
         }
     }
 
@@ -721,13 +732,43 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn push(&mut self, _i: u64) -> RawResult<()> {
+    fn push(&mut self, level: u64) -> RawResult<()> {
         self.processed_logs += 1;
+        let scope = Scope {
+            timestamp: self.processed_logs,
+            level: level + 1,
+            parent_index: Some(self.scopes.len()),
+        };
+        let previous_scope = std::mem::replace(&mut self.current_scope, scope);
+        self.scopes.push(previous_scope);
         Ok(())
     }
 
-    fn pop(&mut self, _i: u64, _j: u64) -> RawResult<()> {
+    fn pop(&mut self, num: u64, current_level: u64) -> RawResult<()> {
         self.processed_logs += 1;
+        if self.has_log_consistency_checks()
+            && (current_level != self.current_scope.level || num > current_level || num == 0)
+        {
+            return Err(RawError::InvalidPop(num, current_level));
+        }
+        let level = current_level - num;
+        let parent_index = {
+            let mut index = self.current_scope.parent_index;
+            while let Some(i) = index {
+                if self.scopes[i].level < level {
+                    break;
+                }
+                index = self.scopes[i].parent_index;
+            }
+            index
+        };
+        let scope = Scope {
+            timestamp: self.processed_logs,
+            level,
+            parent_index,
+        };
+        let previous_scope = std::mem::replace(&mut self.current_scope, scope);
+        self.scopes.push(previous_scope);
         Ok(())
     }
 
