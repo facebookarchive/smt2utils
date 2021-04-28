@@ -18,7 +18,7 @@ pub struct Ident {
 }
 
 /// The hexadecimal index of a quantifier instantiation (QI).
-#[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
 pub struct QiKey {
     pub key: u64,
     pub version: usize,
@@ -171,6 +171,12 @@ impl Ident {
     pub fn is_builtin(&self) -> bool {
         self.id.is_none()
     }
+
+    pub fn previous_version(&self) -> Option<Self> {
+        let mut id = self.clone();
+        id.version = self.version.checked_sub(1)?;
+        Some(id)
+    }
 }
 
 impl std::fmt::Debug for Ident {
@@ -188,6 +194,16 @@ impl std::fmt::Debug for Ident {
             v => format!("!{}", v),
         };
         write!(f, "{}#{}{}", ns, id, version)
+    }
+}
+
+impl std::fmt::Debug for QiKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let version = match self.version {
+            0 => String::new(),
+            v => format!("!{}", v),
+        };
+        write!(f, "{:#x}{}", self.key, version)
     }
 }
 
@@ -365,6 +381,25 @@ impl std::str::FromStr for Ident {
                     .parse()
                     .map_err(|e| lexer.make_error(RawError::InvalidInteger(e)))?;
                 Ok(id)
+            }
+        }
+    }
+}
+
+impl std::str::FromStr for QiKey {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.find('!') {
+            None => {
+                let key = u64::from_str_radix(value.trim_start_matches("0x"), 16)?;
+                Ok(QiKey { key, version: 0 })
+            }
+            Some(pos) => {
+                // The extended syntax `0x123!7` is meant to be used only for testing and debugging.
+                let key = u64::from_str_radix(value.trim_start_matches("0x"), 16)?;
+                let version = value[pos + 1..].parse()?;
+                Ok(QiKey { key, version })
             }
         }
     }
