@@ -69,13 +69,15 @@ pub struct ScopedTermData {
     pub enode_qi: Option<QiKey>,
     /// Truth assignment (applicable when `term` is a boolean formula).
     pub assignment: Option<Assignment>,
-    /// Known proofs of this term (applicable when `term` is a boolean formula).
-    pub proofs: Vec<Ident>,
-    /// Dependencies to QI keys (applicable when `term` is a proof).
+    /// Last known proofs of this term (applicable when `term` is a boolean formula).
+    pub proof: Option<Ident>,
+    /// Dependencies to QI keys (used when `term` is a proof).
     pub qi_key_deps: BTreeSet<QiKey>,
-    /// Dependencies to a `quant-inst` proof term (applicable when `term` is a proof).
-    /// These proof terms will eventually depend on a QI key.
-    pub qi_proof_deps: BTreeSet<Ident>,
+    /// Temporary dependencies to a `quant-inst` proof term (same use case as
+    /// qi_key_deps). When the current scope is finalized, qi_proof_deps are revisited to
+    /// add the corresponding qi_key_deps. Then, this field is clearer. (This is needed
+    /// because we learn the QI key of `quant-inst` proof term after they are used.)
+    pub tmp_qi_proof_deps: BTreeSet<Ident>,
 }
 
 /// Information on a truth assignment.
@@ -154,24 +156,6 @@ impl Assignment {
     }
 }
 
-impl Scope {
-    pub fn term_data(&self, id: &Ident) -> Option<&ScopedTermData> {
-        self.terms.get(id)
-    }
-
-    fn term_data_mut(&mut self, id: &Ident) -> &mut ScopedTermData {
-        self.terms
-            .entry(id.clone())
-            .or_insert_with(|| ScopedTermData {
-                enode_qi: None,
-                assignment: None,
-                proofs: Vec::new(),
-                qi_key_deps: BTreeSet::new(),
-                qi_proof_deps: BTreeSet::new(),
-            })
-    }
-}
-
 impl Model {
     /// Build a new Z3 tracer.
     /// Experimental. Use `Model::default()` instead if possible.
@@ -232,6 +216,19 @@ impl Model {
             .collect()
     }
 
+    /// The QIs seen as explaining the successive conflicts.
+    pub fn conflict_qis(&self) -> Vec<Vec<QiKey>> {
+        self.scopes
+            .iter()
+            .filter_map(|scope| match &scope.last_proof {
+                Some(id) if scope.conflict.is_some() => {
+                    Some(scope.terms.get(id)?.qi_key_deps.iter().cloned().collect())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Retrieve a particular term.
     pub fn term(&self, id: &Ident) -> RawResult<&Term> {
         let t = &self
@@ -242,24 +239,27 @@ impl Model {
         Ok(t)
     }
 
-    pub fn term_assignment(&self, id: &Ident) -> Option<&Assignment> {
-        let mut scope = &self.current_scope;
-        loop {
-            if let Some(data) = scope.term_data(id) {
-                if let Some(a) = &data.assignment {
-                    return Some(a);
-                }
-            }
-            let i = scope.parent_index?;
-            scope = &self.scopes[i];
+    // Obtain a writeable entry in the current scope. The first time, this will trigger a
+    // "copy-on-write" from the most recent ancestor scope that knows about `id` (if any).
+    fn scoped_term_data_mut(&mut self, id: &Ident) -> &mut ScopedTermData {
+        // Sadly, the borrow-checker complains about:
+        //   if let Some(e) = self.current_scope.terms.get_mut(id) { return e; }
+        if self.current_scope.terms.contains_key(id) {
+            return self.current_scope.terms.get_mut(id).unwrap();
         }
+        // For new entries, first recover data from the most recent ancestor.
+        let data = self
+            .scoped_term_data(id)
+            .cloned()
+            .unwrap_or_else(ScopedTermData::default);
+        self.current_scope.terms.entry(id.clone()).or_insert(data)
     }
 
-    // Useful for proofs.
-    pub fn scoped_term_data(&self, id: &Ident) -> Option<&ScopedTermData> {
+    // Access the most recent scoped information about `id`.
+    fn scoped_term_data(&self, id: &Ident) -> Option<&ScopedTermData> {
         let mut scope = &self.current_scope;
         loop {
-            if let Some(data) = scope.term_data(id) {
+            if let Some(data) = scope.terms.get(id) {
                 return Some(data);
             }
             let i = scope.parent_index?;
@@ -267,16 +267,17 @@ impl Model {
         }
     }
 
-    pub fn term_proof(&self, id: &Ident) -> Option<&Ident> {
-        let mut scope = &self.current_scope;
-        loop {
-            if let Some(data) = scope.term_data(id) {
-                if let Some(p) = data.proofs.last() {
-                    return Some(p);
-                }
-            }
-            let i = scope.parent_index?;
-            scope = &self.scopes[i];
+    fn term_assignment(&self, id: &Ident) -> Option<&Assignment> {
+        match self.scoped_term_data(id) {
+            Some(data) => data.assignment.as_ref(),
+            None => None,
+        }
+    }
+
+    fn term_proof(&self, id: &Ident) -> Option<&Ident> {
+        match self.scoped_term_data(id) {
+            Some(data) => data.proof.as_ref(),
+            None => None,
         }
     }
 
@@ -620,12 +621,13 @@ impl Model {
     }
 
     fn set_current_scope(&mut self, scope: Scope) {
+        // Set current scope.
         let mut previous_scope = std::mem::replace(&mut self.current_scope, scope);
-        // Finalize dependencies in previous scope.
+        // Finalize dependencies by resolving qi_proof_deps.
         let mut new_qi_key_deps = Vec::<(Ident, BTreeSet<QiKey>)>::new();
         for (id, data) in &previous_scope.terms {
             let mut deps = BTreeSet::new();
-            for proof in &data.qi_proof_deps {
+            for proof in &data.tmp_qi_proof_deps {
                 if let Some(s) = previous_scope.terms.get(proof) {
                     deps.extend(&s.qi_key_deps);
                 }
@@ -633,8 +635,9 @@ impl Model {
             new_qi_key_deps.push((id.clone(), deps));
         }
         for (id, deps) in new_qi_key_deps {
-            let data = previous_scope.term_data_mut(&id);
+            let data = previous_scope.terms.get_mut(&id).unwrap();
             data.qi_key_deps.extend(deps);
+            data.tmp_qi_proof_deps.clear();
         }
         // Push previous scope.
         self.scopes.push(previous_scope);
@@ -648,18 +651,18 @@ impl LogVisitor for &mut Model {
             term.visit(&mut |id| self.check_ident(id))?;
         }
         // (hack) Detect repeated definitions. In this case, we want to
-        // propagate dependencies found on the previous version.
+        // propagate dependencies found on the previous version of the Ident.
         if let Some(prev_ident) = ident.previous_version() {
             if let Some(entry) = self.terms.get(&prev_ident) {
                 if entry.term == term {
-                    if let Some(prev_data) = self.current_scope.term_data(&prev_ident) {
+                    if let Some(prev_data) = self.current_scope.terms.get(&prev_ident) {
                         let prev_data = prev_data.clone();
-                        *self.current_scope.term_data_mut(&ident) = prev_data;
+                        *self.scoped_term_data_mut(&ident) = prev_data;
                     }
                 }
             }
         }
-        // Handle proof terms and scoped information.
+        // Handle proof terms and their scoped dependency information.
         if let Term::Proof {
             name,
             args,
@@ -667,30 +670,30 @@ impl LogVisitor for &mut Model {
         } = &term
         {
             self.current_scope.last_proof = Some(ident.clone());
-            self.current_scope
-                .term_data_mut(property)
-                .proofs
-                .push(ident.clone());
-            let mut data = std::mem::take(self.current_scope.term_data_mut(&ident));
+            self.scoped_term_data_mut(property).proof = Some(ident.clone());
+
+            let mut data = std::mem::take(self.scoped_term_data_mut(&ident));
             if name == "quant-inst" {
-                // Track dependencies to this proof term.
-                data.qi_proof_deps.insert(ident.clone());
+                // Track dependencies to this proof term (starting with itself).
+                data.tmp_qi_proof_deps.insert(ident.clone());
             }
+            // (hack) If the object of the proof already has dependencies, propagate them.
             if let Some(prop_data) = self.scoped_term_data(property) {
                 data.qi_key_deps
                     .extend(prop_data.qi_key_deps.iter().cloned());
-                data.qi_proof_deps
-                    .extend(prop_data.qi_proof_deps.iter().cloned());
+                data.tmp_qi_proof_deps
+                    .extend(prop_data.tmp_qi_proof_deps.iter().cloned());
             }
+            // Propagate dependencies from sub-proofs.
             for arg in args {
                 if let Some(arg_data) = self.scoped_term_data(arg) {
                     data.qi_key_deps
                         .extend(arg_data.qi_key_deps.iter().cloned());
-                    data.qi_proof_deps
-                        .extend(arg_data.qi_proof_deps.iter().cloned());
+                    data.tmp_qi_proof_deps
+                        .extend(arg_data.tmp_qi_proof_deps.iter().cloned());
                 }
             }
-            *self.current_scope.term_data_mut(&ident) = data;
+            *self.current_scope.terms.get_mut(&ident).unwrap() = data;
         }
         if self.has_log_consistency_checks()
             && matches!(term, Term::App { .. } | Term::Quant { .. })
@@ -725,10 +728,7 @@ impl LogVisitor for &mut Model {
             data.visit(&mut |id| self.check_ident(id))?;
         }
         if let Some(id) = &data.term {
-            self.current_scope
-                .term_data_mut(&id)
-                .qi_key_deps
-                .insert(key);
+            self.scoped_term_data_mut(&id).qi_key_deps.insert(key);
         }
         self.current_instances.push(QuantInstanceData {
             key,
@@ -828,7 +828,7 @@ impl LogVisitor for &mut Model {
             let data = &mut current_instance.data;
             data.enodes.push(id.clone());
             // TODO check that this was None.
-            self.current_scope.term_data_mut(&id).enode_qi = Some(key);
+            self.scoped_term_data_mut(&id).enode_qi = Some(key);
         }
         Ok(())
     }
@@ -853,7 +853,7 @@ impl LogVisitor for &mut Model {
             sign: lit.sign,
             timestamp,
         };
-        let data = self.current_scope.term_data_mut(&lit.id);
+        let data = self.scoped_term_data_mut(&lit.id);
         // TODO check that this was None.
         data.assignment = Some(assignment);
         if let Some(key) = data.enode_qi {
