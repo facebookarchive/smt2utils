@@ -63,14 +63,19 @@ pub struct TermData {
 }
 
 /// Scoped information on a term.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ScopedTermData {
     /// QI that made this term an active "enode", if any.
     pub enode_qi: Option<QiKey>,
-    /// Truth assignment.
+    /// Truth assignment (applicable when `term` is a boolean formula).
     pub assignment: Option<Assignment>,
     /// Known proofs of this term (applicable when `term` is a boolean formula).
     pub proofs: Vec<Ident>,
+    /// Dependencies to QI keys (applicable when `term` is a proof).
+    pub qi_key_deps: BTreeSet<QiKey>,
+    /// Dependencies to a `quant-inst` proof term (applicable when `term` is a proof).
+    /// These proof terms will eventually depend on a QI key.
+    pub qi_proof_deps: BTreeSet<Ident>,
 }
 
 /// Information on a truth assignment.
@@ -102,6 +107,10 @@ pub struct Scope {
     pub parent_index: Option<usize>,
     /// Scoped data on terms.
     pub terms: BTreeMap<Ident, ScopedTermData>,
+    /// Conflict.
+    pub conflict: Option<Conflict>,
+    /// Track the last proof of the scope. (Used to explain the conflict.)
+    pub last_proof: Option<Ident>,
 }
 
 /// Information on a quantifier instance.
@@ -129,8 +138,6 @@ pub struct Model {
     current_instances: Vec<QuantInstanceData>,
     // Number of Z3 log callbacks already executed.
     processed_logs: usize,
-    // Conflicts.
-    conflicts: Vec<Conflict>,
     // Scopes.
     scopes: Vec<Scope>,
     // Current scope.
@@ -159,6 +166,8 @@ impl Scope {
                 enode_qi: None,
                 assignment: None,
                 proofs: Vec::new(),
+                qi_key_deps: BTreeSet::new(),
+                qi_proof_deps: BTreeSet::new(),
             })
     }
 }
@@ -196,11 +205,6 @@ impl Model {
     /// Number of Z3 logs that were processed.
     pub fn processed_logs(&self) -> usize {
         self.processed_logs
-    }
-
-    /// All conflicts in the model.
-    pub fn conflicts(&self) -> &Vec<Conflict> {
-        &self.conflicts
     }
 
     /// All (finalized) scopes in the model.
@@ -245,6 +249,18 @@ impl Model {
                 if let Some(a) = &data.assignment {
                     return Some(a);
                 }
+            }
+            let i = scope.parent_index?;
+            scope = &self.scopes[i];
+        }
+    }
+
+    // Useful for proofs.
+    pub fn scoped_term_data(&self, id: &Ident) -> Option<&ScopedTermData> {
+        let mut scope = &self.current_scope;
+        loop {
+            if let Some(data) = scope.term_data(id) {
+                return Some(data);
             }
             let i = scope.parent_index?;
             scope = &self.scopes[i];
@@ -602,6 +618,27 @@ impl Model {
             _ => Ok(false),
         }
     }
+
+    fn set_current_scope(&mut self, scope: Scope) {
+        let mut previous_scope = std::mem::replace(&mut self.current_scope, scope);
+        // Finalize dependencies in previous scope.
+        let mut new_qi_key_deps = Vec::<(Ident, BTreeSet<QiKey>)>::new();
+        for (id, data) in &previous_scope.terms {
+            let mut deps = BTreeSet::new();
+            for proof in &data.qi_proof_deps {
+                if let Some(s) = previous_scope.terms.get(proof) {
+                    deps.extend(&s.qi_key_deps);
+                }
+            }
+            new_qi_key_deps.push((id.clone(), deps));
+        }
+        for (id, deps) in new_qi_key_deps {
+            let data = previous_scope.term_data_mut(&id);
+            data.qi_key_deps.extend(deps);
+        }
+        // Push previous scope.
+        self.scopes.push(previous_scope);
+    }
 }
 
 impl LogVisitor for &mut Model {
@@ -610,11 +647,50 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             term.visit(&mut |id| self.check_ident(id))?;
         }
-        if let Term::Proof { property, .. } = &term {
+        // (hack) Detect repeated definitions. In this case, we want to
+        // propagate dependencies found on the previous version.
+        if let Some(prev_ident) = ident.previous_version() {
+            if let Some(entry) = self.terms.get(&prev_ident) {
+                if entry.term == term {
+                    if let Some(prev_data) = self.current_scope.term_data(&prev_ident) {
+                        let prev_data = prev_data.clone();
+                        *self.current_scope.term_data_mut(&ident) = prev_data;
+                    }
+                }
+            }
+        }
+        // Handle proof terms and scoped information.
+        if let Term::Proof {
+            name,
+            args,
+            property,
+        } = &term
+        {
+            self.current_scope.last_proof = Some(ident.clone());
             self.current_scope
                 .term_data_mut(property)
                 .proofs
                 .push(ident.clone());
+            let mut data = std::mem::take(self.current_scope.term_data_mut(&ident));
+            if name == "quant-inst" {
+                // Track dependencies to this proof term.
+                data.qi_proof_deps.insert(ident.clone());
+            }
+            if let Some(prop_data) = self.scoped_term_data(property) {
+                data.qi_key_deps
+                    .extend(prop_data.qi_key_deps.iter().cloned());
+                data.qi_proof_deps
+                    .extend(prop_data.qi_proof_deps.iter().cloned());
+            }
+            for arg in args {
+                if let Some(arg_data) = self.scoped_term_data(arg) {
+                    data.qi_key_deps
+                        .extend(arg_data.qi_key_deps.iter().cloned());
+                    data.qi_proof_deps
+                        .extend(arg_data.qi_proof_deps.iter().cloned());
+                }
+            }
+            *self.current_scope.term_data_mut(&ident) = data;
         }
         if self.has_log_consistency_checks()
             && matches!(term, Term::App { .. } | Term::Quant { .. })
@@ -647,6 +723,12 @@ impl LogVisitor for &mut Model {
         // Ident check.
         if self.has_log_consistency_checks() {
             data.visit(&mut |id| self.check_ident(id))?;
+        }
+        if let Some(id) = &data.term {
+            self.current_scope
+                .term_data_mut(&id)
+                .qi_key_deps
+                .insert(key);
         }
         self.current_instances.push(QuantInstanceData {
             key,
@@ -745,7 +827,7 @@ impl LogVisitor for &mut Model {
             let key = current_instance.key;
             let data = &mut current_instance.data;
             data.enodes.push(id.clone());
-            // TODO check
+            // TODO check that this was None.
             self.current_scope.term_data_mut(&id).enode_qi = Some(key);
         }
         Ok(())
@@ -771,8 +853,13 @@ impl LogVisitor for &mut Model {
             sign: lit.sign,
             timestamp,
         };
-        // TODO check
-        self.current_scope.term_data_mut(&lit.id).assignment = Some(assignment);
+        let data = self.current_scope.term_data_mut(&lit.id);
+        // TODO check that this was None.
+        data.assignment = Some(assignment);
+        if let Some(key) = data.enode_qi {
+            // Assignments of a QI-produced term are seen as "depending" on the QI.
+            data.qi_key_deps.insert(key);
+        }
         Ok(())
     }
 
@@ -781,7 +868,7 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             lits.visit(&mut |id| self.check_ident(id))?;
         }
-        self.conflicts.push(Conflict {
+        self.current_scope.conflict = Some(Conflict {
             lits,
             timestamp: self.processed_logs,
         });
@@ -797,10 +884,9 @@ impl LogVisitor for &mut Model {
             timestamp: self.processed_logs,
             level: level + 1,
             parent_index: Some(self.scopes.len()),
-            terms: BTreeMap::new(),
+            ..Scope::default()
         };
-        let previous_scope = std::mem::replace(&mut self.current_scope, scope);
-        self.scopes.push(previous_scope);
+        self.set_current_scope(scope);
         Ok(())
     }
 
@@ -826,10 +912,9 @@ impl LogVisitor for &mut Model {
             timestamp: self.processed_logs,
             level,
             parent_index,
-            terms: BTreeMap::new(),
+            ..Scope::default()
         };
-        let previous_scope = std::mem::replace(&mut self.current_scope, scope);
-        self.scopes.push(previous_scope);
+        self.set_current_scope(scope);
         Ok(())
     }
 
