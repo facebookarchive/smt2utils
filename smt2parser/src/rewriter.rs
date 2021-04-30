@@ -1,6 +1,8 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![allow(clippy::type_complexity)]
+
 //! Rewriting of Smt2 values
 
 use crate::{
@@ -907,7 +909,7 @@ fn test_term_rewriter() {
 
     let mut builder = Builder2::default();
 
-    let command2 = command.clone().accept(&mut builder);
+    let command2 = command.accept(&mut builder);
     let command3 = Command::Exit;
     assert_eq!(command2, command3);
 }
