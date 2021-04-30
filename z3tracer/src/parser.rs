@@ -6,10 +6,7 @@ use structopt::StructOpt;
 use crate::{
     error::{RawError, RawResult, Result},
     lexer::Lexer,
-    syntax::{
-        Equality, Ident, Literal, Meaning, QiKey, QuantInstantiation, QuantInstantiationData,
-        QuantInstantiationKind, Term, VarName,
-    },
+    syntax::{Equality, Ident, Literal, Meaning, QiFrame, QiInstance, QiKey, Term, VarName},
 };
 
 // https://github.com/TeXitoi/structopt/issues/333
@@ -36,9 +33,9 @@ pub struct Parser<R, S> {
 pub trait LogVisitor {
     fn add_term(&mut self, id: Ident, term: Term) -> RawResult<()>;
 
-    fn add_instantiation(&mut self, key: QiKey, inst: QuantInstantiation) -> RawResult<()>;
+    fn add_instantiation(&mut self, key: QiKey, frame: QiFrame) -> RawResult<()>;
 
-    fn start_instance(&mut self, key: QiKey, data: QuantInstantiationData) -> RawResult<()>;
+    fn start_instance(&mut self, key: QiKey, instance: QiInstance) -> RawResult<()>;
 
     fn end_instance(&mut self) -> RawResult<()>;
 
@@ -191,17 +188,13 @@ where
                 let quantifier = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
                 let blame = lexer.read_idents()?;
-                let kind = QuantInstantiationKind::Discovered {
+                let frame = QiFrame::Discovered {
                     method,
                     quantifier,
                     terms,
                     blame,
                 };
-                let inst = QuantInstantiation {
-                    kind,
-                    data: Vec::new(),
-                };
-                state.add_instantiation(key, inst)?;
+                state.add_instantiation(key, frame)?;
                 lexer.read_end_of_line()?;
                 Ok(true)
             }
@@ -211,17 +204,13 @@ where
                 let trigger = lexer.read_ident()?;
                 let terms = lexer.read_idents()?;
                 let used = lexer.read_matched_terms()?;
-                let kind = QuantInstantiationKind::NewMatch {
+                let frame = QiFrame::NewMatch {
                     quantifier,
                     trigger,
                     terms,
                     used,
                 };
-                let inst = QuantInstantiation {
-                    kind,
-                    data: Vec::new(),
-                };
-                state.add_instantiation(key, inst)?;
+                state.add_instantiation(key, frame)?;
                 lexer.read_end_of_line()?;
                 Ok(true)
             }
@@ -236,12 +225,12 @@ where
                 let key = lexer.read_key()?;
                 let term = lexer.read_optional_ident()?;
                 let generation = lexer.read_optional_integer()?;
-                let data = QuantInstantiationData {
+                let instance = QiInstance {
                     generation,
                     term,
                     enodes: Vec::new(),
                 };
-                state.start_instance(key, data)?;
+                state.start_instance(key, instance)?;
                 lexer.read_end_of_line()?;
                 Ok(true)
             }

@@ -11,8 +11,8 @@ use crate::{
     lexer::Lexer,
     parser::{LogVisitor, Parser, ParserConfig},
     syntax::{
-        Equality, Ident, Literal, MatchedTerm, Meaning, QiKey, QuantInstantiation,
-        QuantInstantiationData, QuantInstantiationKind, Term, VarName, Visitor,
+        Equality, Ident, Literal, MatchedTerm, Meaning, QiFrame, QiInstance, QiKey, Term, VarName,
+        Visitor,
     },
 };
 
@@ -75,22 +75,22 @@ pub struct TermData {
 #[derive(Debug, Default, Clone)]
 pub struct ScopedTermData {
     /// QI that made this term an active "enode", if any.
-    pub enode_qi: Option<Qi>,
+    pub enode_qi: Option<QiRef>,
     /// Truth assignment (applicable when the term is a boolean formula).
     pub assignment: Option<Assignment>,
     /// First known proof of this term in the current backtracking
     /// stack (applicable when the term is a boolean formula).
-    pub proof: Option<Proof>,
+    pub proof: Option<ProofRef>,
     /// Tentative root for the term's equality class. `None` iff the term is its own root.
     pub eq_class: Option<Ident>,
     /// Dependencies to QI keys (when the term is not a proof, this represents the
     /// requirements for equality to the current E-class representant).
-    pub qi_key_deps: BTreeSet<Qi>,
+    pub qi_key_deps: BTreeSet<QiRef>,
     /// Temporary dependencies to a `quant-inst` proof term (same use case as
     /// qi_key_deps). When the current scope is finalized, qi_proof_deps are revisited to
     /// add the corresponding qi_key_deps. Then, this field is clearer. (This is needed
     /// because we learn the QI key of `quant-inst` proof term after they are used.)
-    pub tmp_qi_proof_deps: BTreeSet<Proof>,
+    pub tmp_qi_proof_deps: BTreeSet<ProofRef>,
 }
 
 /// Information on a truth assignment.
@@ -106,7 +106,7 @@ pub struct Assignment {
 
 /// Information on justifications by proof terms.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Proof {
+pub struct ProofRef {
     /// Proof term id.
     pub id: Ident,
     /// Scope in which the proof was made.
@@ -115,7 +115,7 @@ pub struct Proof {
 
 /// Information on a Quantifier Instantiation.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Qi {
+pub struct QiRef {
     /// Key of the QI
     pub key: QiKey,
     /// Scope in which the QI was made.
@@ -150,16 +150,24 @@ pub struct Scope {
     pub needs_consolidation: bool,
 }
 
-/// Information on a quantifier instance.
+/// Information on a QI instance that is pending (i.e. waiting for
+/// `[end-instance]`).
 #[derive(Debug, Clone)]
-pub struct QuantInstanceData {
+pub struct PendingQiInstance {
     /// Hexadecimal key of the instantiation.
     pub key: QiKey,
-    /// Quantifier instantiation data including optional term and ident.
-    pub data: QuantInstantiationData,
+    /// The QI instance.
+    pub instance: QiInstance,
     /// Timestamp of the QI. Right now this is the line number in the Z3 logs where
     /// the instantiation occurs.
     pub timestamp: usize,
+}
+
+/// Quantifier instantiation.
+#[derive(Clone, Debug)]
+pub struct QuantInstantiation {
+    pub frame: QiFrame,
+    pub instances: Vec<QiInstance>,
 }
 
 /// Main state of the Z3 tracer.
@@ -171,8 +179,8 @@ pub struct Model {
     terms: BTreeMap<Ident, TermData>,
     // Quantifier instantiations indexed by (hexadecimal) key.
     instantiations: BTreeMap<QiKey, QuantInstantiation>,
-    // Stack of current quantifier instances.
-    current_instances: Vec<QuantInstanceData>,
+    // Stack of pending quantifier instantiations.
+    pending_instances: Vec<PendingQiInstance>,
     // Number of Z3 log callbacks already executed.
     processed_logs: usize,
     // Scopes.
@@ -260,7 +268,7 @@ impl Model {
     }
 
     /// The QIs seen as explaining the successive conflicts.
-    pub fn conflict_qis(&self) -> Vec<Vec<Qi>> {
+    pub fn conflict_qis(&self) -> Vec<Vec<QiRef>> {
         self.scopes
             .iter()
             .filter_map(|scope| match &scope.last_proof {
@@ -318,7 +326,7 @@ impl Model {
         self.scoped_term_data(id).assignment.as_ref()
     }
 
-    fn term_proof(&self, id: &Ident) -> Option<&Proof> {
+    fn term_proof(&self, id: &Ident) -> Option<&ProofRef> {
         self.scoped_term_data(id).proof.as_ref()
     }
 
@@ -488,9 +496,9 @@ impl Model {
             .instantiations
             .get(&key)
             .ok_or(RawError::InvalidInstanceKey)?;
-        match &inst.kind {
-            QuantInstantiationKind::Discovered { .. } => (),
-            QuantInstantiationKind::NewMatch {
+        match &inst.frame {
+            QiFrame::Discovered { .. } => (),
+            QiFrame::NewMatch {
                 quantifier,
                 terms,
                 trigger,
@@ -552,10 +560,10 @@ impl Model {
                         }
                     }
                     if self.config.with_qi_produced_terms {
-                        for data in &inst.data {
+                        for instance in &inst.instances {
                             // Print maximal produced terms (aka attached enodes).
                             let mut subterms = BTreeSet::new();
-                            for e in data.enodes.iter().rev() {
+                            for e in instance.enodes.iter().rev() {
                                 if !subterms.contains(e) {
                                     let t = self.term(e)?;
                                     self.append_term_subterms(&mut subterms, t)?;
@@ -616,8 +624,8 @@ impl Model {
         &mut self,
         id0: &Ident,
         id1: &Ident,
-        ext_qi_key_deps: &[Qi],
-        ext_tmp_qi_proof_deps: &[Proof],
+        ext_qi_key_deps: &[QiRef],
+        ext_tmp_qi_proof_deps: &[ProofRef],
     ) -> Ident {
         let cid0 = self.term_equality_class(id0);
         let cid1 = self.term_equality_class(id1);
@@ -662,8 +670,8 @@ impl Model {
         ancestor_scope_index: usize,
         id0: &Ident,
         id1: &Ident,
-        ext_qi_key_deps: &[Qi],
-        ext_tmp_qi_proof_deps: &[Proof],
+        ext_qi_key_deps: &[QiRef],
+        ext_tmp_qi_proof_deps: &[ProofRef],
     ) -> Ident {
         // Start with the current scope.
         if self.config.log_internal_term_equalities {
@@ -850,13 +858,13 @@ impl Model {
         // Set current scope.
         let mut previous_scope = std::mem::replace(&mut self.current_scope, new_scope);
         // Finalize dependencies by resolving qi_proof_deps.
-        let mut new_qi_key_deps = Vec::<(Ident, BTreeSet<Qi>)>::new();
+        let mut new_qi_key_deps = Vec::<(Ident, BTreeSet<QiRef>)>::new();
         for (id, data) in &previous_scope.terms {
             let mut deps = BTreeSet::new();
             for proof in &data.tmp_qi_proof_deps {
                 let index = proof.scope_index;
                 if let Some(s) = previous_scope.terms.get(&proof.id) {
-                    deps.extend(s.qi_key_deps.iter().map(|qi| Qi {
+                    deps.extend(s.qi_key_deps.iter().map(|qi| QiRef {
                         key: qi.key,
                         scope_index: std::cmp::max(qi.scope_index, index),
                     }));
@@ -899,7 +907,7 @@ impl LogVisitor for &mut Model {
         {
             self.current_scope.last_proof = Some(ident.clone());
             if self.scoped_term_data(property).proof.is_none() {
-                self.scoped_term_data_mut(property).proof = Some(Proof {
+                self.scoped_term_data_mut(property).proof = Some(ProofRef {
                     id: ident.clone(),
                     scope_index: self.scopes.len(),
                 });
@@ -915,7 +923,7 @@ impl LogVisitor for &mut Model {
             let mut data = std::mem::take(self.scoped_term_data_mut(&ident));
             if name == "quant-inst" {
                 // Track dependencies to this proof term (starting with itself).
-                data.tmp_qi_proof_deps.insert(Proof {
+                data.tmp_qi_proof_deps.insert(ProofRef {
                     id: ident.clone(),
                     scope_index: self.scopes.len(),
                 });
@@ -955,12 +963,12 @@ impl LogVisitor for &mut Model {
         Ok(())
     }
 
-    fn add_instantiation(&mut self, key: QiKey, inst: QuantInstantiation) -> RawResult<()> {
+    fn add_instantiation(&mut self, key: QiKey, frame: QiFrame) -> RawResult<()> {
         self.processed_logs += 1;
         if self.has_log_consistency_checks() {
-            inst.visit(&mut |id| self.check_ident(id))?;
+            frame.visit(&mut |id| self.check_ident(id))?;
             // Verify used equalities
-            if let QuantInstantiationKind::NewMatch { used, .. } = &inst.kind {
+            if let QiFrame::NewMatch { used, .. } = &frame {
                 for u in used {
                     if let MatchedTerm::Equality(id1, id2) = u {
                         if self.check_equality(id1, id2).is_none() {
@@ -970,28 +978,34 @@ impl LogVisitor for &mut Model {
                 }
             }
         }
-        let quantifier = inst.kind.quantifier();
+        let quantifier = frame.quantifier();
         self.term_data_mut(quantifier)?.instantiations.push(key);
-        self.instantiations.insert(key, inst);
+        self.instantiations.insert(
+            key,
+            QuantInstantiation {
+                frame,
+                instances: Vec::new(),
+            },
+        );
         Ok(())
     }
 
-    fn start_instance(&mut self, key: QiKey, data: QuantInstantiationData) -> RawResult<()> {
+    fn start_instance(&mut self, key: QiKey, instance: QiInstance) -> RawResult<()> {
         self.processed_logs += 1;
         // Ident check.
         if self.has_log_consistency_checks() {
-            data.visit(&mut |id| self.check_ident(id))?;
+            instance.visit(&mut |id| self.check_ident(id))?;
         }
-        if let Some(id) = &data.term {
-            let qi = Qi {
+        if let Some(id) = &instance.term {
+            let qi = QiRef {
                 key,
                 scope_index: 0,
             };
             self.scoped_term_data_mut(&id).qi_key_deps.insert(qi);
         }
-        self.current_instances.push(QuantInstanceData {
+        self.pending_instances.push(PendingQiInstance {
             key,
-            data,
+            instance,
             timestamp: self.processed_logs,
         });
         Ok(())
@@ -999,20 +1013,20 @@ impl LogVisitor for &mut Model {
 
     fn end_instance(&mut self) -> RawResult<()> {
         self.processed_logs += 1;
-        let QuantInstanceData {
+        let PendingQiInstance {
             key,
-            data,
+            instance,
             timestamp,
         } = self
-            .current_instances
+            .pending_instances
             .pop()
             .ok_or(RawError::InvalidEndOfInstance)?;
         let inst = self
             .instantiations
             .get_mut(&key)
             .ok_or(RawError::InvalidInstanceKey)?;
-        inst.data.push(data);
-        let quantifier = inst.kind.quantifier().clone();
+        inst.instances.push(instance);
+        let quantifier = inst.frame.quantifier().clone();
         self.term_data_mut(&quantifier)?
             .instantiation_timestamps
             .push(timestamp);
@@ -1119,13 +1133,12 @@ impl LogVisitor for &mut Model {
     fn attach_enode(&mut self, id: Ident, _generation: u64) -> RawResult<()> {
         self.processed_logs += 1;
         // Ignore commands outside of [instance]..[end-of-instance].
-        if !self.current_instances.is_empty() {
-            let current_instance = self.current_instances.last_mut().unwrap();
-            let key = current_instance.key;
-            let data = &mut current_instance.data;
-            data.enodes.push(id.clone());
+        if !self.pending_instances.is_empty() {
+            let pending_instance = self.pending_instances.last_mut().unwrap();
+            let key = pending_instance.key;
+            pending_instance.instance.enodes.push(id.clone());
             // TODO check that this was None.
-            self.scoped_term_data_mut(&id).enode_qi = Some(Qi {
+            self.scoped_term_data_mut(&id).enode_qi = Some(QiRef {
                 key,
                 scope_index: 0,
             });
