@@ -81,9 +81,9 @@ pub struct VarName {
     pub sort: Symbol,
 }
 
-/// Quantifier instantiation (case-specific data).
+/// A quantifier instantiation as declared by [inst-discovered] or [new-match].
 #[derive(Clone, Debug)]
-pub enum QuantInstantiationKind {
+pub enum QiFrame {
     Discovered {
         method: String,
         quantifier: Ident,
@@ -121,29 +121,23 @@ impl Term {
     }
 }
 
-impl QuantInstantiationKind {
+impl QiFrame {
     /// Id of the quantifier term.
     pub fn quantifier(&self) -> &Ident {
-        use QuantInstantiationKind::*;
+        use QiFrame::*;
         match self {
             Discovered { quantifier, .. } | NewMatch { quantifier, .. } => quantifier,
         }
     }
 }
 
-/// Quantifier instantiation (shared data).
+/// Data specific to an instance of a quantifier instantiation (i.e. gathered
+/// between [instance] and [end-instance]).
 #[derive(Clone, Debug)]
-pub struct QuantInstantiationData {
+pub struct QiInstance {
     pub generation: Option<u64>,
     pub term: Option<Ident>,
     pub enodes: Vec<Ident>,
-}
-
-/// Quantifier instantiation.
-#[derive(Clone, Debug)]
-pub struct QuantInstantiation {
-    pub kind: QuantInstantiationKind,
-    pub data: Vec<QuantInstantiationData>,
 }
 
 /// Description of a term matching a trigger in `NewMatch`.
@@ -288,12 +282,12 @@ where
     }
 }
 
-impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiationKind
+impl<'a, F, E> Visitor<'a, F, E> for QiFrame
 where
     F: FnMut(&'a Ident) -> Result<(), E>,
 {
     fn visit(&'a self, f: &mut F) -> Result<(), E> {
-        use QuantInstantiationKind::*;
+        use QiFrame::*;
         match self {
             Discovered { terms, blame, .. } => {
                 terms.visit(f)?;
@@ -304,16 +298,6 @@ where
                 used.visit(f)
             }
         }
-    }
-}
-
-impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiation
-where
-    F: FnMut(&'a Ident) -> Result<(), E>,
-{
-    fn visit(&'a self, f: &mut F) -> Result<(), E> {
-        self.kind.visit(f)?;
-        self.data.visit(f)
     }
 }
 
@@ -354,7 +338,7 @@ where
     }
 }
 
-impl<'a, F, E> Visitor<'a, F, E> for QuantInstantiationData
+impl<'a, F, E> Visitor<'a, F, E> for QiInstance
 where
     F: FnMut(&'a Ident) -> Result<(), E>,
 {
