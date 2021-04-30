@@ -37,7 +37,7 @@ fn parse_clauses(src: &str) -> HashSet<String> {
     let src = if src.starts_with('(') && src.ends_with('(') {
         &src[1..src.len() - 1].trim()
     } else {
-        &src[..]
+        src
     };
     src.split(' ').map(String::from).collect()
 }
@@ -126,7 +126,7 @@ impl Rewriter {
         match term {
             Term::Attributes { attributes, .. } => {
                 for (k, v) in attributes {
-                    if &k.0 == key {
+                    if k.0 == key {
                         return Some(v);
                     }
                 }
@@ -140,7 +140,7 @@ impl Rewriter {
         match &mut term {
             Term::Attributes { attributes, .. } => {
                 for (k, v) in attributes.iter_mut() {
-                    if &k.0 == &key {
+                    if k.0 == key {
                         *v = value;
                         return term;
                     }
