@@ -85,12 +85,13 @@ pub struct ScopedTermData {
     pub eq_class: Option<Ident>,
     /// Dependencies to QI keys (when the term is not a proof, this represents the
     /// requirements for equality to the current E-class representant).
-    pub qi_key_deps: BTreeSet<QiRef>,
-    /// Temporary dependencies to a `quant-inst` proof term (same use case as
-    /// qi_key_deps). When the current scope is finalized, qi_proof_deps are revisited to
-    /// add the corresponding qi_key_deps. Then, this field is clearer. (This is needed
-    /// because we learn the QI key of `quant-inst` proof term after they are used.)
-    pub tmp_qi_proof_deps: BTreeSet<ProofRef>,
+    pub qi_deps: BTreeSet<QiRef>,
+    /// Temporary data reflecting dependencies to a `quant-inst` proof term (same use case
+    /// as qi_deps). When the current scope is finalized, proof_deps are revisited
+    /// to add the corresponding qi_deps. Then, this field is cleared. (This whole
+    /// hack is needed because we learn the QI key of `quant-inst` proof term after they
+    /// are used.)
+    proof_deps: BTreeSet<ProofRef>,
 }
 
 /// Information on a truth assignment.
@@ -129,6 +130,10 @@ pub struct Conflict {
     pub lits: Vec<Literal>,
     /// Relative creation time (currently, the line number in the Z3 log).
     pub timestamp: usize,
+    /// Dependencies to QI keys (see ScopedTermData).
+    pub qi_deps: BTreeSet<QiRef>,
+    /// Temporary data reflecting dependencies to a `quant-inst` proof term (idem).
+    proof_deps: BTreeSet<ProofRef>,
 }
 
 /// Information on a scope.
@@ -146,8 +151,10 @@ pub struct Scope {
     pub conflict: Option<Conflict>,
     /// Track the last proof of the scope. (Used to explain the conflict.)
     pub last_proof: Option<Ident>,
+    /// QIs that happened during this scope. (Used to resolve proof_deps)
+    pub instantiations: Vec<QiKey>,
     /// Whether equality pointers needs consolidation in this scope.
-    pub needs_consolidation: bool,
+    needs_consolidation: bool,
 }
 
 /// Information on a QI instance that is pending (i.e. waiting for
@@ -163,11 +170,17 @@ pub struct PendingQiInstance {
     pub timestamp: usize,
 }
 
-/// Quantifier instantiation.
+/// Quantifier instantiation data.
 #[derive(Clone, Debug)]
 pub struct QuantInstantiation {
+    /// Main declaration as returned by [new-match] or [inst-discovered] logs.
     pub frame: QiFrame,
+    /// Corresponding "instance" data collected between [instance] and [end-instance] logs.
     pub instances: Vec<QiInstance>,
+    /// Dependencies to QI keys (see ScopedTermData).
+    pub qi_deps: BTreeSet<QiRef>,
+    /// Temporary data reflecting dependencies to a `quant-inst` proof term (idem).
+    proof_deps: BTreeSet<ProofRef>,
 }
 
 /// Main state of the Z3 tracer.
@@ -268,16 +281,10 @@ impl Model {
     }
 
     /// The QIs seen as explaining the successive conflicts.
-    pub fn conflict_qis(&self) -> Vec<Vec<QiRef>> {
+    pub fn conflicts(&self) -> impl Iterator<Item = &Conflict> {
         self.scopes
             .iter()
-            .filter_map(|scope| match &scope.last_proof {
-                Some(id) if scope.conflict.is_some() => {
-                    Some(scope.terms.get(id)?.qi_key_deps.iter().cloned().collect())
-                }
-                _ => None,
-            })
-            .collect()
+            .filter_map(|scope| scope.conflict.as_ref())
     }
 
     /// Retrieve a particular term.
@@ -352,13 +359,13 @@ impl Model {
         // cid is no longer a root. Need to update the entry of id and
         // re-import deps from cid.
         let cdata = self.scoped_term_data(&cid);
-        let c_qi_key_deps = cdata.qi_key_deps.clone();
-        let c_tmp_qi_proof_deps = cdata.tmp_qi_proof_deps.clone();
+        let c_qi_deps = cdata.qi_deps.clone();
+        let c_proof_deps = cdata.proof_deps.clone();
         self.current_scope.needs_consolidation = true;
         let data = self.scoped_term_data_mut(id);
         data.eq_class = Some(new_cid.clone());
-        data.qi_key_deps.extend(c_qi_key_deps);
-        data.tmp_qi_proof_deps.extend(c_tmp_qi_proof_deps);
+        data.qi_deps.extend(c_qi_deps);
+        data.proof_deps.extend(c_proof_deps);
         new_cid
     }
 
@@ -624,8 +631,8 @@ impl Model {
         &mut self,
         id0: &Ident,
         id1: &Ident,
-        ext_qi_key_deps: &[QiRef],
-        ext_tmp_qi_proof_deps: &[ProofRef],
+        ext_qi_deps: &[QiRef],
+        ext_proof_deps: &[ProofRef],
     ) -> Ident {
         let cid0 = self.term_equality_class(id0);
         let cid1 = self.term_equality_class(id1);
@@ -641,17 +648,16 @@ impl Model {
         // Need to update the entry of cid0 and re-import deps from
         // id1.
         let cdata = self.scoped_term_data(&id1);
-        let c_qi_key_deps = cdata.qi_key_deps.clone();
-        let c_tmp_qi_proof_deps = cdata.tmp_qi_proof_deps.clone();
+        let c_qi_deps = cdata.qi_deps.clone();
+        let c_proof_deps = cdata.proof_deps.clone();
         self.current_scope.needs_consolidation = true;
         let data = self.scoped_term_data_mut(&cid0);
         data.eq_class = Some(cid1.clone());
-        data.qi_key_deps.extend(c_qi_key_deps);
-        data.tmp_qi_proof_deps.extend(c_tmp_qi_proof_deps);
+        data.qi_deps.extend(c_qi_deps);
+        data.proof_deps.extend(c_proof_deps);
         // Adding external deps as well.
-        data.qi_key_deps.extend(ext_qi_key_deps.iter().cloned());
-        data.tmp_qi_proof_deps
-            .extend(ext_tmp_qi_proof_deps.iter().cloned());
+        data.qi_deps.extend(ext_qi_deps.iter().cloned());
+        data.proof_deps.extend(ext_proof_deps.iter().cloned());
         if self.config.log_internal_term_equalities {
             eprintln!(
                 "{}: @{} {:?} -> {:?} ==> {:?} <- {:?}",
@@ -670,11 +676,11 @@ impl Model {
         ancestor_scope_index: usize,
         id0: &Ident,
         id1: &Ident,
-        ext_qi_key_deps: &[QiRef],
-        ext_tmp_qi_proof_deps: &[ProofRef],
+        ext_qi_deps: &[QiRef],
+        ext_proof_deps: &[ProofRef],
     ) -> Ident {
         // Start with the current scope.
-        if self.config.log_internal_term_equalities {
+        if self.config.log_term_equalities {
             println!(
                 "{}: @{}..={} {:?} == {:?}",
                 self.processed_logs,
@@ -687,7 +693,7 @@ impl Model {
                 id1,
             );
         }
-        let cid = self.make_terms_equal(id0, id1, ext_qi_key_deps, ext_tmp_qi_proof_deps);
+        let cid = self.make_terms_equal(id0, id1, ext_qi_deps, ext_proof_deps);
         let mut parent_index = self.current_scope.parent_index;
         while let Some(index) = parent_index {
             if index < ancestor_scope_index {
@@ -695,7 +701,7 @@ impl Model {
             }
             // Also modify ancestor.
             std::mem::swap(&mut self.current_scope, &mut self.scopes[index]);
-            self.make_terms_equal(id0, id1, ext_qi_key_deps, ext_tmp_qi_proof_deps);
+            self.make_terms_equal(id0, id1, ext_qi_deps, ext_proof_deps);
             // Do not consolidate scope for now.
             std::mem::swap(&mut self.current_scope, &mut self.scopes[index]);
             // Next scope index
@@ -707,12 +713,12 @@ impl Model {
     fn term_max_scope_index(&self, id: &Ident) -> usize {
         let data = self.scoped_term_data(id);
         let mut index = 0;
-        for qi in &data.qi_key_deps {
+        for qi in &data.qi_deps {
             if qi.scope_index > index {
                 index = qi.scope_index;
             }
         }
-        for proof in &data.tmp_qi_proof_deps {
+        for proof in &data.proof_deps {
             if proof.scope_index > index {
                 index = proof.scope_index;
             }
@@ -830,8 +836,7 @@ impl Model {
         }
     }
 
-    fn consolidate_current_scope(&mut self) {
-        // Consolidate equality classes.
+    fn consolidate_equality_classes(&mut self) {
         let ids = self
             .current_scope
             .terms
@@ -850,34 +855,82 @@ impl Model {
         self.current_scope.needs_consolidation = false;
     }
 
-    fn push_current_scope(&mut self, new_scope: Scope) {
-        // TODO: consolidate all scopes?
-        if self.current_scope.needs_consolidation {
-            self.consolidate_current_scope();
-        }
-        // Set current scope.
-        let mut previous_scope = std::mem::replace(&mut self.current_scope, new_scope);
-        // Finalize dependencies by resolving qi_proof_deps.
-        let mut new_qi_key_deps = Vec::<(Ident, BTreeSet<QiRef>)>::new();
-        for (id, data) in &previous_scope.terms {
-            let mut deps = BTreeSet::new();
-            for proof in &data.tmp_qi_proof_deps {
-                let index = proof.scope_index;
-                if let Some(s) = previous_scope.terms.get(&proof.id) {
-                    deps.extend(s.qi_key_deps.iter().map(|qi| QiRef {
-                        key: qi.key,
-                        scope_index: std::cmp::max(qi.scope_index, index),
-                    }));
-                }
+    fn add_deps_from_term<Q, P>(&self, qi_deps: &mut Q, proof_deps: &mut P, id: &Ident)
+    where
+        Q: std::iter::Extend<QiRef>,
+        P: std::iter::Extend<ProofRef>,
+    {
+        let data = self.scoped_term_data(id);
+        qi_deps.extend(data.qi_deps.iter().cloned());
+        proof_deps.extend(data.proof_deps.iter().cloned());
+    }
+
+    fn proof_to_qi_deps<'a, I>(&'a self, proofs: I) -> BTreeSet<QiRef>
+    where
+        I: Iterator<Item = &'a ProofRef>,
+    {
+        let mut deps = BTreeSet::new();
+        for proof in proofs {
+            let index = proof.scope_index;
+            if let Some(s) = self.current_scope.terms.get(&proof.id) {
+                deps.extend(s.qi_deps.iter().map(|qi| QiRef {
+                    key: qi.key,
+                    scope_index: std::cmp::max(qi.scope_index, index),
+                }));
             }
-            new_qi_key_deps.push((id.clone(), deps));
         }
-        for (id, deps) in new_qi_key_deps {
-            let data = previous_scope.terms.get_mut(&id).unwrap();
-            data.qi_key_deps.extend(deps);
-            data.tmp_qi_proof_deps.clear();
+        deps
+    }
+
+    /// Finalize dependencies by resolving proof_deps and scope.last_proof.
+    fn finalize_dependencies(&mut self) {
+        // Terms
+        let mut new_qi_deps = Vec::<(Ident, BTreeSet<QiRef>)>::new();
+        for (id, data) in &self.current_scope.terms {
+            let deps = self.proof_to_qi_deps(data.proof_deps.iter());
+            new_qi_deps.push((id.clone(), deps));
         }
-        // Push previous scope.
+        for (id, deps) in new_qi_deps {
+            let data = self.current_scope.terms.get_mut(&id).unwrap();
+            data.qi_deps.extend(deps);
+            data.proof_deps.clear();
+        }
+        // QIs
+        let mut new_qi_deps = Vec::<(QiKey, BTreeSet<QiRef>)>::new();
+        for key in &self.current_scope.instantiations {
+            let deps =
+                self.proof_to_qi_deps(self.instantiations.get(key).unwrap().proof_deps.iter());
+            new_qi_deps.push((*key, deps));
+        }
+        for (key, deps) in new_qi_deps {
+            let inst = self.instantiations.get_mut(&key).unwrap();
+            inst.qi_deps.extend(deps);
+            inst.proof_deps.clear();
+        }
+        // Conflict
+        if self.current_scope.conflict.is_some() {
+            let deps = self.proof_to_qi_deps(
+                self.current_scope
+                    .conflict
+                    .as_ref()
+                    .unwrap()
+                    .proof_deps
+                    .iter(),
+            );
+            let conflict = self.current_scope.conflict.as_mut().unwrap();
+            conflict.qi_deps.extend(deps);
+            conflict.proof_deps.clear();
+        }
+    }
+
+    fn push_current_scope(&mut self, new_scope: Scope) {
+        // TODO: consolidate equalities in all scopes?
+        if self.current_scope.needs_consolidation {
+            self.consolidate_equality_classes();
+        }
+        self.finalize_dependencies();
+        // Rotate current scope.
+        let previous_scope = std::mem::replace(&mut self.current_scope, new_scope);
         self.scopes.push(previous_scope);
     }
 }
@@ -914,33 +967,28 @@ impl LogVisitor for &mut Model {
                 if let Some([id1, id2]) = self.term(property)?.matches_equality() {
                     // Optimization: handle equality early here rather than later in add_equality.
                     let data = self.scoped_term_data(&ident);
-                    let qi_key_deps = data.qi_key_deps.iter().cloned().collect::<Vec<_>>();
-                    let tmp_qi_proof_deps =
-                        data.tmp_qi_proof_deps.iter().cloned().collect::<Vec<_>>();
-                    self.make_terms_equal(&id1, &id2, &qi_key_deps, &tmp_qi_proof_deps);
+                    let qi_deps = data.qi_deps.iter().cloned().collect::<Vec<_>>();
+                    let proof_deps = data.proof_deps.iter().cloned().collect::<Vec<_>>();
+                    self.make_terms_equal(&id1, &id2, &qi_deps, &proof_deps);
                 }
             }
             let mut data = std::mem::take(self.scoped_term_data_mut(&ident));
             if name == "quant-inst" {
                 // Track dependencies to this proof term (starting with itself).
-                data.tmp_qi_proof_deps.insert(ProofRef {
+                data.proof_deps.insert(ProofRef {
                     id: ident.clone(),
                     scope_index: self.scopes.len(),
                 });
             }
             // (hack) If the object of the proof already has dependencies, propagate them.
             let prop_data = self.scoped_term_data(property);
-            data.qi_key_deps
-                .extend(prop_data.qi_key_deps.iter().cloned());
-            data.tmp_qi_proof_deps
-                .extend(prop_data.tmp_qi_proof_deps.iter().cloned());
+            data.qi_deps.extend(prop_data.qi_deps.iter().cloned());
+            data.proof_deps.extend(prop_data.proof_deps.iter().cloned());
             // Propagate dependencies from sub-proofs.
             for arg in args {
                 let arg_data = self.scoped_term_data(arg);
-                data.qi_key_deps
-                    .extend(arg_data.qi_key_deps.iter().cloned());
-                data.tmp_qi_proof_deps
-                    .extend(arg_data.tmp_qi_proof_deps.iter().cloned());
+                data.qi_deps.extend(arg_data.qi_deps.iter().cloned());
+                data.proof_deps.extend(arg_data.proof_deps.iter().cloned());
             }
             *self
                 .current_scope
@@ -967,17 +1015,23 @@ impl LogVisitor for &mut Model {
         self.processed_logs += 1;
         if self.has_log_consistency_checks() {
             frame.visit(&mut |id| self.check_ident(id))?;
-            // Verify used equalities
-            if let QiFrame::NewMatch { used, .. } = &frame {
-                for u in used {
-                    if let MatchedTerm::Equality(id1, id2) = u {
-                        if self.check_equality(id1, id2).is_none() {
-                            return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
-                        }
+        }
+        let mut qi_deps = BTreeSet::new();
+        let mut proof_deps = BTreeSet::new();
+        // Verify used equalities
+        if let QiFrame::NewMatch { used, .. } = &frame {
+            for u in used {
+                if let MatchedTerm::Equality(id1, id2) = u {
+                    if self.has_log_consistency_checks() && self.check_equality(id1, id2).is_none()
+                    {
+                        return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
                     }
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id1);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id2);
                 }
             }
         }
+
         let quantifier = frame.quantifier();
         self.term_data_mut(quantifier)?.instantiations.push(key);
         self.instantiations.insert(
@@ -985,6 +1039,8 @@ impl LogVisitor for &mut Model {
             QuantInstantiation {
                 frame,
                 instances: Vec::new(),
+                qi_deps,
+                proof_deps,
             },
         );
         Ok(())
@@ -1001,7 +1057,7 @@ impl LogVisitor for &mut Model {
                 key,
                 scope_index: 0,
             };
-            self.scoped_term_data_mut(&id).qi_key_deps.insert(qi);
+            self.scoped_term_data_mut(&id).qi_deps.insert(qi);
         }
         self.pending_instances.push(PendingQiInstance {
             key,
@@ -1043,7 +1099,7 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             eq.visit(&mut |id| self.check_ident(id))?;
         }
-        let (cid, scope_index, qi_key_deps, tmp_qi_proof_deps) = match &eq {
+        let (cid, scope_index, qi_deps, proof_deps) = match &eq {
             Root => {
                 // Nothing to do.
                 return Ok(());
@@ -1057,14 +1113,14 @@ impl LogVisitor for &mut Model {
                 (
                     cid,
                     scope_index.unwrap_or(0),
-                    data.qi_key_deps.iter().cloned().collect(),
-                    data.tmp_qi_proof_deps.iter().cloned().collect(),
+                    data.qi_deps.iter().cloned().collect(),
+                    data.proof_deps.iter().cloned().collect(),
                 )
             }
             Congruence(eqs, cid) => {
                 let mut scope_index = 0;
-                let mut qi_key_deps = Vec::new();
-                let mut tmp_qi_proof_deps = Vec::new();
+                let mut qi_deps = Vec::new();
+                let mut proof_deps = Vec::new();
                 for (id1, id2) in eqs {
                     let index = match self.check_equality(id1, id2) {
                         Some(i) => i,
@@ -1082,25 +1138,21 @@ impl LogVisitor for &mut Model {
                     if index > scope_index {
                         scope_index = index;
                     }
-                    let data = self.scoped_term_data(&id1);
-                    qi_key_deps.extend(data.qi_key_deps.iter().cloned());
-                    tmp_qi_proof_deps.extend(data.tmp_qi_proof_deps.iter().cloned());
-                    let data = self.scoped_term_data(&id2);
-                    qi_key_deps.extend(data.qi_key_deps.iter().cloned());
-                    tmp_qi_proof_deps.extend(data.tmp_qi_proof_deps.iter().cloned());
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id1);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id2);
                 }
                 if self.has_log_consistency_checks()
                     && !self.check_congruence_equality(eqs, &id, cid)?
                 {
                     return Err(RawError::CannotProcessEquality(id, eq));
                 }
-                (cid, scope_index, qi_key_deps, tmp_qi_proof_deps)
+                (cid, scope_index, qi_deps, proof_deps)
             }
             Theory(_, cid) => (cid, 0, Vec::new(), Vec::new()),
             Axiom(cid) => (cid, 0, Vec::new(), Vec::new()),
             Unknown(cid) => (cid, 0, Vec::new(), Vec::new()),
         };
-        self.make_terms_equal_at_scope(scope_index, &id, cid, &qi_key_deps, &tmp_qi_proof_deps);
+        self.make_terms_equal_at_scope(scope_index, &id, cid, &qi_deps, &proof_deps);
         Ok(())
     }
 
@@ -1172,7 +1224,7 @@ impl LogVisitor for &mut Model {
         data.assignment = Some(assignment);
         if let Some(key) = &data.enode_qi {
             // Assignments of a QI-produced term are seen as "depending" on the QI.
-            data.qi_key_deps.insert(key.clone());
+            data.qi_deps.insert(key.clone());
         }
         Ok(())
     }
@@ -1182,9 +1234,17 @@ impl LogVisitor for &mut Model {
         if self.has_log_consistency_checks() {
             lits.visit(&mut |id| self.check_ident(id))?;
         }
+        let mut qi_deps = BTreeSet::new();
+        let mut proof_deps = BTreeSet::new();
+        if let Some(proof) = &self.current_scope.last_proof {
+            // In practice, a [conflict] log is preceded by its proof.
+            self.add_deps_from_term(&mut qi_deps, &mut proof_deps, proof);
+        }
         self.current_scope.conflict = Some(Conflict {
             lits,
             timestamp: self.processed_logs,
+            qi_deps,
+            proof_deps,
         });
         Ok(())
     }
