@@ -34,7 +34,7 @@ pub struct RewriterConfig {
 
 fn parse_clauses(src: &str) -> HashSet<String> {
     let src = src.trim();
-    let src = if src.starts_with('(') && src.ends_with('(') {
+    let src = if src.starts_with('(') && src.ends_with(')') {
         &src[1..src.len() - 1].trim()
     } else {
         src
@@ -79,8 +79,14 @@ impl Rewriter {
         }
     }
 
-    fn make_clause_name(&mut self) -> Symbol {
-        let s = format!("{}{}", CLAUSE, self.clause_count);
+    fn make_clause_name(&mut self, term: &Term) -> Symbol {
+        let mut qid = String::new();
+        if let Term::Forall { term, .. } = term {
+            if let Some(s) = Self::get_quantifier_name(term) {
+                qid = format!("!{}", s.0);
+            }
+        }
+        let s = format!("{}{}{}", CLAUSE, self.clause_count, qid);
         self.clause_count += 1;
         Symbol(s)
     }
@@ -106,11 +112,6 @@ impl Rewriter {
     fn get_clause_name(term: &Term) -> Option<&Symbol> {
         if let Some(AttributeValue::Symbol(s)) = Self::get_attribute(term, "named") {
             return Some(s);
-        }
-        if let Term::Forall { term, .. } = term {
-            if let Some(s) = Self::get_quantifier_name(term) {
-                return Some(s);
-            }
         }
         None
     }
@@ -211,10 +212,11 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
     fn visit_assert(&mut self, term: Term) -> Command {
         let name = Self::get_clause_name(&term)
             .cloned()
-            .unwrap_or_else(|| self.make_clause_name());
+            .unwrap_or_else(|| self.make_clause_name(&term));
         if let Some(list) = &self.config.keep_only_clauses {
-            if !list.contains(&name.0) {
+            if !list.contains(&name.0) && !list.contains(&format!("|{}|", &name.0)) {
                 // Discard clause.
+                eprintln!("Discarding {}", name.0);
                 return Self::assert_true();
             }
         }
