@@ -20,6 +20,8 @@ struct Options {
 fn main() -> anyhow::Result<()> {
     let options = Options::from_args();
 
+    eprintln!("Current options: {:#?}", options);
+
     let mut patcher = smt2patch::Patcher::new(options.config);
     patcher.read(&options.input)?;
     patcher.write(&options.output)?;
