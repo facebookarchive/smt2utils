@@ -21,11 +21,15 @@ jobs:
         rustup toolchain install 1.51.0-x86_64-unknown-linux-gnu
         rustup component add rustfmt --toolchain 1.51.0-x86_64-unknown-linux-gnu
         rustup component add clippy --toolchain 1.51.0-x86_64-unknown-linux-gnu
-    - name: Build
+    - name: Build (default features)
       run: cargo build --verbose
-    - name: Run tests
+    - name: Run tests (default features)
       run: cargo test --verbose
+    - name: Build (release + all features)
+      run: cargo build --release --verbose
+    - name: Run tests (release + all features)
+      run: cargo test --release --all-features --verbose
     - name: Rustfmt
       run: cargo fmt -- --check
     - name: Clippy
-      run: cargo clippy --all-targets
+      run: cargo clippy --all-features --all-targets
