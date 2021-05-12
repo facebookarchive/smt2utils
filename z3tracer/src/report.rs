@@ -72,6 +72,22 @@ impl<T: Ord> Iterator for IntoIterSorted<T> {
     }
 }
 
+fn max_ts_and_count(times: &[(String, Vec<usize>)]) -> (usize, usize) {
+    let mut ts = 1;
+    let mut count = 1;
+    for (_, v) in times {
+        if let Some(x) = v.last() {
+            if *x > ts {
+                ts = *x;
+            }
+        }
+        if v.len() > count {
+            count = v.len();
+        }
+    }
+    (ts, count)
+}
+
 pub fn plot_instantiations<B>(
     root: DrawingArea<B, plotters::coord::Shift>,
     times: &[(String, Vec<usize>)],
@@ -82,12 +98,7 @@ where
     B: DrawingBackend,
     B::ErrorType: 'static,
 {
-    let max_ts = times
-        .iter()
-        .map(|(_, v)| v.last().cloned().unwrap_or(0))
-        .max()
-        .unwrap_or(1);
-    let max_count = times[0].1.len();
+    let (max_ts, max_count) = max_ts_and_count(times);
 
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
@@ -190,13 +201,7 @@ where
     B: DrawingBackend,
     B::ErrorType: 'static,
 {
-    let max_ts = times
-        .iter()
-        .map(|(_, v)| v.last().cloned().unwrap_or(0))
-        .chain(scopes.iter().map(|(ts, _)| *ts))
-        .max()
-        .unwrap_or(1);
-    let max_count = times[0].1.len();
+    let (max_ts, max_count) = max_ts_and_count(times);
     let max_level = scopes.iter().map(|(_, l)| *l).max().unwrap_or(1);
 
     root.fill(&WHITE)?;
@@ -271,12 +276,7 @@ where
     B: DrawingBackend,
     B::ErrorType: 'static,
 {
-    let max_ts = times
-        .iter()
-        .map(|(_, v)| v.last().cloned().unwrap_or(0))
-        .max()
-        .unwrap_or(1);
-    let max_count = times[0].1.len();
+    let (max_ts, max_count) = max_ts_and_count(times);
 
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)

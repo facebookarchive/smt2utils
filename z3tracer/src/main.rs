@@ -62,6 +62,10 @@ struct Options {
     #[structopt(long)]
     keep_only_user_instantiations_in_graphs: bool,
 
+    /// Use a single node for all conflicts in graph.
+    #[structopt(long)]
+    merge_conflicts_in_graphs: bool,
+
     /// How to select "user" instantiations.
     #[structopt(long, default_value = "outputbpl")]
     user_instantiation_prefix: String,
@@ -95,6 +99,7 @@ fn get_dependency_graph(
     model: &Model,
     with_conflicts: bool,
     keep_only_user_instantiations: Option<&str>,
+    merge_conflicts_in_graphs: bool,
 ) -> petgraph::Graph<String, String> {
     // Define nodes as the names of QIs (e.g. the names of quantified expressions in the source code).
     let nodes = model
@@ -151,19 +156,42 @@ fn get_dependency_graph(
     }
 
     if with_conflicts {
-        // Adding conflicts (with multiplicities as weights)
-        for c in model.conflicts() {
-            let n = graph.add_node(format!("conflict@{}", c.timestamp));
+        if merge_conflicts_in_graphs {
+            // Adding one node for all conflicts.
+            let n0 = graph.add_node("all conflicts".into());
             let mut outgoing = HashMultiSet::new();
-            for d in &c.qi_deps {
-                if let Some(m) = model.key2name(&d.key) {
-                    outgoing.insert(m)
+            for c in model.conflicts() {
+                for d in &c.qi_deps {
+                    if let Some(m) = model.key2name(&d.key) {
+                        outgoing.insert(m)
+                    }
                 }
             }
             for m in outgoing.distinct_elements() {
                 let c = outgoing.count_of(m);
                 if let Some(m) = pg_nodes.get(m) {
-                    graph.add_edge(n, *m, c.to_string());
+                    graph.add_edge(n0, *m, c.to_string());
+                }
+            }
+        } else {
+            // Adding conflicts separately (with multiplicities as weights)
+            for c in model.conflicts() {
+                let mut outgoing = HashMultiSet::new();
+                for d in &c.qi_deps {
+                    if let Some(m) = model.key2name(&d.key) {
+                        outgoing.insert(m)
+                    }
+                }
+                if outgoing.is_empty() {
+                    // Skip dependency-less conflicts.
+                    continue;
+                }
+                let n = graph.add_node(format!("conflict@{}", c.timestamp));
+                for m in outgoing.distinct_elements() {
+                    let c = outgoing.count_of(m);
+                    if let Some(m) = pg_nodes.get(m) {
+                        graph.add_edge(n, *m, c.to_string());
+                    }
                 }
             }
         }
@@ -316,7 +344,7 @@ fn main() {
                 path.to_str().unwrap_or("")
             );
 
-            let g = get_dependency_graph(&model, false, keep_only_user_instantiations);
+            let g = get_dependency_graph(&model, false, keep_only_user_instantiations, false);
             let mut f = std::fs::File::create(path.clone()).unwrap();
             writeln!(f, "{}", petgraph::dot::Dot::new(&g)).unwrap();
 
@@ -333,7 +361,12 @@ fn main() {
                 path.to_str().unwrap_or("")
             );
 
-            let g = get_dependency_graph(&model, true, keep_only_user_instantiations);
+            let g = get_dependency_graph(
+                &model,
+                true,
+                keep_only_user_instantiations,
+                options.merge_conflicts_in_graphs,
+            );
             let mut f = std::fs::File::create(path.clone()).unwrap();
             writeln!(f, "{}", petgraph::dot::Dot::new(&g)).unwrap();
 
