@@ -35,8 +35,12 @@ pomelo! {
     %type qual_identifier T::QualIdentifier;
     %type identifier visitors::Identifier<T::Symbol>;
 
-    %type symbol T::Symbol;
-    %type symbols Vec<T::Symbol>;
+    %type bound_symbol T::Symbol;
+    %type bound_symbols Vec<T::Symbol>;
+    %type fresh_symbol T::Symbol;
+    %type fresh_symbols Vec<T::Symbol>;
+    %type any_symbol T::Symbol;
+    %type pattern_symbols Vec<T::Symbol>;
     %type pattern Vec<T::Symbol>;
 
     %type keyword T::Keyword;
@@ -82,15 +86,21 @@ pomelo! {
 
     %start_symbol command;
 
-    symbol ::= Symbol(s) { extra.visit_symbol(s) }
+    bound_symbol ::= Symbol(s) { extra.visit_bound_symbol(s).expect("failed to resolve symbol") }
+    fresh_symbol ::= Symbol(s) { extra.visit_fresh_symbol(s) }
+    any_symbol ::= Symbol(s) { extra.visit_any_symbol(s) }
     keyword ::= Keyword(s) { extra.visit_keyword(s) }
 
-    symbols ::= symbol(x) { vec![x] }
-    symbols ::= symbols(mut xs) symbol(x) { xs.push(x); xs }
+    bound_symbols ::= bound_symbol(x) { vec![x] }
+    bound_symbols ::= bound_symbols(mut xs) bound_symbol(x) { xs.push(x); xs }
+    fresh_symbols ::= fresh_symbol(x) { vec![x] }
+    fresh_symbols ::= fresh_symbols(mut xs) fresh_symbol(x) { xs.push(x); xs }
+    pattern_symbols ::= any_symbol(x) { vec![x] }
+    pattern_symbols ::= fresh_symbols(mut xs) fresh_symbol(x) { xs.push(x); xs }
 
     // attribute_value ::= ⟨spec_constant⟩ | ⟨symbol⟩ | ( ⟨s_expr⟩∗ ) |
     attribute_value ::= constant(x) { visitors::AttributeValue::Constant(x) }
-    attribute_value ::= symbol(x) { visitors::AttributeValue::Symbol(x) }
+    attribute_value ::= bound_symbol(x) { visitors::AttributeValue::Symbol(x) }
     attribute_value ::= LeftParen s_exprs?(xs) RightParen { visitors::AttributeValue::SExpr(xs.unwrap_or_else(Vec::new)) }
     attribute_value ::= { visitors::AttributeValue::None }
 
@@ -99,7 +109,7 @@ pomelo! {
 
     // s_expr ::= ⟨spec_constant⟩ | ⟨symbol⟩ | ⟨keyword⟩ | ( ⟨s_expr⟩∗ )
     s_expr ::= constant(x) { extra.visit_constant_s_expr(x) }
-    s_expr ::= symbol(x) { extra.visit_symbol_s_expr(x) }
+    s_expr ::= bound_symbol(x) { extra.visit_symbol_s_expr(x) }
     s_expr ::= keyword(x) { extra.visit_keyword_s_expr(x) }
     s_expr ::= LeftParen s_exprs?(xs) RightParen { extra.visit_application_s_expr(xs.unwrap_or_else(Vec::new)) }
 
@@ -108,14 +118,14 @@ pomelo! {
 
     // index ::= ⟨numeral⟩ | ⟨symbol⟩
     index ::= Numeral(x) { visitors::Index::Numeral(x) }
-    index ::= symbol(x) { visitors::Index::Symbol(x) }
+    index ::= bound_symbol(x) { visitors::Index::Symbol(x) }
 
     indices ::= index(x) { vec![x] }
     indices ::= indices(mut xs) index(x) { xs.push(x); xs }
 
     // identifier ::= ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
-    identifier ::= symbol(symbol) { visitors::Identifier::Simple { symbol } }
-    identifier ::= LeftParen Underscore symbol(symbol) indices(indices) RightParen { visitors::Identifier::Indexed { symbol, indices } }
+    identifier ::= bound_symbol(symbol) { visitors::Identifier::Simple { symbol } }
+    identifier ::= LeftParen Underscore bound_symbol(symbol) indices(indices) RightParen { visitors::Identifier::Indexed { symbol, indices } }
 
     // sort ::= ⟨identifier⟩ | ( ⟨identifier⟩ ⟨sort⟩+ )
     sort ::= identifier(id) { extra.visit_simple_sort(id) }
@@ -136,20 +146,20 @@ pomelo! {
     constant ::= String(x) { extra.visit_string_constant(x) }
 
     // ⟨var_binding⟩ ::= ( ⟨symbol⟩ ⟨term⟩ )
-    var_binding ::= LeftParen symbol(s) term(t) RightParen { (s, t) }
+    var_binding ::= LeftParen fresh_symbol(s) term(t) RightParen { (s, t) }
 
     var_bindings ::= var_binding(x) { vec![x] }
     var_bindings ::= var_bindings(mut xs) var_binding(x) { xs.push(x); xs }
 
     // ⟨sorted_var⟩ ::= ( ⟨symbol⟩ ⟨sort⟩ )
-    sorted_var ::= LeftParen symbol(s) sort(x) RightParen { (s, x) }
+    sorted_var ::= LeftParen fresh_symbol(s) sort(x) RightParen { (s, x) }
 
     sorted_vars ::= sorted_var(x) { vec![x] }
     sorted_vars ::= sorted_vars(mut xs) sorted_var(x) { xs.push(x); xs }
 
     // pattern ::= ⟨symbol⟩ | ( ⟨symbol⟩ ⟨symbol⟩+ )
-    pattern ::= symbol(x) { vec![x] }
-    pattern ::= LeftParen symbols(xs) RightParen { xs }
+    pattern ::= any_symbol(x) { vec![x] }
+    pattern ::= LeftParen pattern_symbols(xs) RightParen { xs }
 
     // ⟨match_case⟩ ::= ( ⟨pattern⟩ ⟨term⟩ )
     match_case ::= LeftParen pattern(p) term(t) RightParen { (p, t) }
@@ -179,8 +189,8 @@ pomelo! {
     terms ::= terms(mut xs) term(x) { xs.push(x); xs }
 
     // prop_literal ::= ⟨symbol⟩ | ( not ⟨symbol⟩ )
-    prop_literal ::= symbol(x) { (x, true) }
-    prop_literal ::= LeftParen Symbol(s) symbol(x) RightParen {
+    prop_literal ::= bound_symbol(x) { (x, true) }
+    prop_literal ::= LeftParen Symbol(s) bound_symbol(x) RightParen {
         if s != "not" {
             return Err(());
         }
@@ -191,13 +201,13 @@ pomelo! {
     prop_literals ::= prop_literals(mut xs) prop_literal(x) { xs.push(x); xs }
 
     // ⟨selector_dec⟩ ::= ( ⟨symbol⟩ ⟨sort⟩ )
-    selector_dec ::= LeftParen symbol(x) sort(s) RightParen { (x, s) }
+    selector_dec ::= LeftParen bound_symbol(x) sort(s) RightParen { (x, s) }
 
     selector_decs ::= selector_dec(x) { vec![x] }
     selector_decs ::= selector_decs(mut xs) selector_dec(x) { xs.push(x); xs }
 
     // constructor_dec ::= ( ⟨symbol⟩ ⟨selector_dec⟩∗ )
-    constructor_dec ::= LeftParen symbol(x) selector_decs?(xs) RightParen
+    constructor_dec ::= LeftParen fresh_symbol(x) selector_decs?(xs) RightParen
     {
         visitors::ConstructorDec { symbol:x, selectors:xs.unwrap_or_else(Vec::new) }
     }
@@ -210,7 +220,7 @@ pomelo! {
     {
         visitors::DatatypeDec { parameters: Vec::new(), constructors: xs }
     }
-    datatype_dec ::= LeftParen Par LeftParen symbols(ps) RightParen LeftParen constructor_decs(xs) RightParen RightParen
+    datatype_dec ::= LeftParen Par LeftParen fresh_symbols(ps) RightParen LeftParen constructor_decs(xs) RightParen RightParen
     {
         visitors::DatatypeDec { parameters: ps, constructors: xs }
     }
@@ -219,7 +229,7 @@ pomelo! {
     datatype_decs ::= datatype_decs(mut xs) datatype_dec(x) { xs.push(x); xs }
 
     // function_dec ::= ⟨symbol⟩ ( ⟨sorted_var⟩∗ ) ⟨sort⟩
-    function_dec ::= symbol(x) LeftParen sorted_vars?(xs) RightParen sort(s)
+    function_dec ::= fresh_symbol(x) LeftParen sorted_vars?(xs) RightParen sort(s)
     {
         visitors::FunctionDec {
             name: x,
@@ -232,7 +242,7 @@ pomelo! {
     function_decs ::= function_decs(mut xs) function_dec(x) { xs.push(x); xs }
 
     // sort_dec ::= ( ⟨symbol⟩ ⟨numeral⟩ )
-    sort_dec ::= LeftParen symbol(x) Numeral(num) RightParen { (x, num) }
+    sort_dec ::= LeftParen fresh_symbol(x) Numeral(num) RightParen { (x, num) }
 
     sort_decs ::= sort_dec(x) { vec![x] }
     sort_decs ::= sort_decs(mut xs) sort_dec(x) { xs.push(x); xs }
@@ -248,12 +258,12 @@ pomelo! {
         extra.visit_check_sat_assuming(xs.unwrap_or_else(Vec::new))
     }
     //   ( declare-const ⟨symbol⟩ ⟨sort⟩ )
-    command ::= LeftParen DeclareConst symbol(x) sort(s) RightParen
+    command ::= LeftParen DeclareConst fresh_symbol(x) sort(s) RightParen
     {
         extra.visit_declare_const(x, s)
     }
     //   ( declare-datatype ⟨symbol⟩ ⟨datatype_dec⟩)
-    command ::= LeftParen DeclareDatatype symbol(s) datatype_dec(d) RightParen
+    command ::= LeftParen DeclareDatatype fresh_symbol(s) datatype_dec(d) RightParen
     {
         extra.visit_declare_datatype(s, d)
     }
@@ -272,12 +282,12 @@ pomelo! {
         }
     }
     //   ( declare-fun ⟨symbol⟩ ( ⟨sort⟩∗ ) ⟨sort⟩ )
-    command ::= LeftParen DeclareFun symbol(x) LeftParen sorts?(xs) RightParen sort(r) RightParen
+    command ::= LeftParen DeclareFun fresh_symbol(x) LeftParen sorts?(xs) RightParen sort(r) RightParen
     {
         extra.visit_declare_fun(x, xs.unwrap_or_else(Vec::new), r)
     }
     //   ( declare-sort ⟨symbol⟩ ⟨numeral⟩ )
-    command ::= LeftParen DeclareSort symbol(x) Numeral(num) RightParen
+    command ::= LeftParen DeclareSort fresh_symbol(x) Numeral(num) RightParen
     {
         extra.visit_declare_sort(x, num)
     }
@@ -302,7 +312,7 @@ pomelo! {
         }
     }
     //   ( define-sort ⟨symbol⟩ ( ⟨symbol⟩∗ ) ⟨sort⟩ )
-    command ::= LeftParen DefineSort symbol(x) LeftParen symbols?(xs) RightParen sort(r) RightParen
+    command ::= LeftParen DefineSort fresh_symbol(x) LeftParen bound_symbols?(xs) RightParen sort(r) RightParen
     {
         extra.visit_define_sort(x, xs.unwrap_or_else(Vec::new), r)
     }
@@ -339,7 +349,7 @@ pomelo! {
     //   ( set-info ⟨attribute⟩ )
     command ::= LeftParen SetInfo keyword(k) attribute_value(v) RightParen { extra.visit_set_info(k, v) }
     //   ( set-logic ⟨symbol⟩ )
-    command ::= LeftParen SetLogic symbol(x) RightParen { extra.visit_set_logic(x) }
+    command ::= LeftParen SetLogic bound_symbol(x) RightParen { extra.visit_set_logic(x) }
     //   ( set-option ⟨attribute⟩ )
     command ::= LeftParen SetOption keyword(k) attribute_value(v) RightParen { extra.visit_set_option(k, v) }
 }
