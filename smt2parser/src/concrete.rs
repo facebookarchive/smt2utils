@@ -230,18 +230,8 @@ impl Constant {
 impl SymbolVisitor for SyntaxBuilder {
     type T = Symbol;
 
-    fn visit_symbol(&mut self, value: String) -> Self::T {
+    fn visit_fresh_symbol(&mut self, value: String) -> Self::T {
         Symbol(value)
-    }
-}
-
-impl Symbol {
-    /// Visit a concrete symbol.
-    pub fn accept<V>(self, visitor: &mut V) -> V::T
-    where
-        V: SymbolVisitor,
-    {
-        visitor.visit_symbol(self.0)
     }
 }
 
@@ -299,7 +289,9 @@ impl SExpr {
                 visitor.visit_constant_s_expr(c)
             }
             Symbol(value) => {
-                let s = value.accept(visitor);
+                let s = visitor
+                    .visit_bound_symbol(value.0)
+                    .expect("failed to resolve symbol");
                 visitor.visit_symbol_s_expr(s)
             }
             Keyword(value) => {
@@ -342,14 +334,18 @@ impl Sort {
         use Sort::*;
         match self {
             Simple { identifier } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let i = identifier.remap(visitor, |v, s: Symbol| {
+                    v.visit_bound_symbol(s.0).expect("failed to resolve symbol")
+                });
                 visitor.visit_simple_sort(i)
             }
             Parameterized {
                 identifier,
                 parameters,
             } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let i = identifier.remap(visitor, |v, s: Symbol| {
+                    v.visit_bound_symbol(s.0).expect("failed to resolve symbol")
+                });
                 let ts = parameters.into_iter().map(|s| s.accept(visitor)).collect();
                 visitor.visit_parameterized_sort(i, ts)
             }
@@ -380,11 +376,15 @@ impl QualIdentifier {
         use QualIdentifier::*;
         match self {
             Simple { identifier } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let i = identifier.remap(visitor, |v, s: Symbol| {
+                    v.visit_bound_symbol(s.0).expect("failed to resolve symbol")
+                });
                 visitor.visit_simple_identifier(i)
             }
             Sorted { identifier, sort } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_symbol(s.0));
+                let i = identifier.remap(visitor, |v, s: Symbol| {
+                    v.visit_bound_symbol(s.0).expect("failed to resolve symbol")
+                });
                 let s = sort.accept(visitor);
                 visitor.visit_sorted_identifier(i, s)
             }
@@ -477,25 +477,31 @@ impl Term {
             Let { var_bindings, term } => {
                 let bs = var_bindings
                     .into_iter()
-                    .map(|(s, t)| (s.accept(visitor), t.accept(visitor)))
-                    .collect();
+                    .map(|(s, t)| (visitor.visit_fresh_symbol(s.0), t.accept(visitor)))
+                    .collect::<Vec<_>>();
+                bs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor);
+                bs.iter().for_each(|(s, _)| visitor.unbind_symbol(s));
                 visitor.visit_let(bs, t)
             }
             Forall { vars, term } => {
                 let vs = vars
                     .into_iter()
-                    .map(|(v, s)| (v.accept(visitor), s.accept(visitor)))
-                    .collect();
+                    .map(|(v, s)| (visitor.visit_fresh_symbol(v.0), s.accept(visitor)))
+                    .collect::<Vec<_>>();
+                vs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor);
+                vs.iter().for_each(|(s, _)| visitor.unbind_symbol(s));
                 visitor.visit_forall(vs, t)
             }
             Exists { vars, term } => {
                 let vs = vars
                     .into_iter()
-                    .map(|(v, s)| (v.accept(visitor), s.accept(visitor)))
-                    .collect();
+                    .map(|(v, s)| (visitor.visit_fresh_symbol(v.0), s.accept(visitor)))
+                    .collect::<Vec<_>>();
+                vs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor);
+                vs.iter().for_each(|(s, _)| visitor.unbind_symbol(s));
                 visitor.visit_exists(vs, t)
             }
             Match { term, cases } => {
@@ -503,10 +509,34 @@ impl Term {
                 let cs = cases
                     .into_iter()
                     .map(|(ss, t)| {
-                        (
-                            ss.into_iter().map(|s| s.accept(visitor)).collect(),
-                            t.accept(visitor),
-                        )
+                        let mut symbols = Vec::new();
+                        let mut ss = ss.into_iter();
+                        let mut has_fresh_first_symbol = false;
+                        if let Some(s) = ss.next() {
+                            // First symbol may be a constructor.
+                            symbols.push(visitor.visit_bound_symbol(s.0).unwrap_or_else(|v| {
+                                has_fresh_first_symbol = true;
+                                let s = visitor.visit_fresh_symbol(v);
+                                visitor.bind_symbol(&s);
+                                s
+                            }));
+                        }
+                        for s in ss {
+                            let s = visitor.visit_fresh_symbol(s.0);
+                            visitor.bind_symbol(&s);
+                            symbols.push(s);
+                        }
+                        let term = t.accept(visitor);
+                        let mut ss = symbols.iter();
+                        if let Some(s) = ss.next() {
+                            if has_fresh_first_symbol {
+                                visitor.unbind_symbol(s);
+                            }
+                        }
+                        for s in ss {
+                            visitor.unbind_symbol(s);
+                        }
+                        (symbols, term)
                     })
                     .collect();
                 visitor.visit_match(t, cs)
@@ -521,7 +551,9 @@ impl Term {
                             x.remap(
                                 visitor,
                                 |v, c: self::Constant| c.accept(v),
-                                |v, s: Symbol| s.accept(v),
+                                |v, s: Symbol| {
+                                    v.visit_bound_symbol(s.0).expect("failed to resolve symbol")
+                                },
                                 |v, e: SExpr| e.accept(v),
                             ),
                         )
@@ -696,26 +728,77 @@ impl Command {
             CheckSatAssuming { literals } => {
                 let ls = literals
                     .into_iter()
-                    .map(|(s, b)| (s.accept(visitor), b))
+                    .map(|(s, b)| {
+                        (
+                            visitor
+                                .visit_bound_symbol(s.0)
+                                .expect("failed to resolve symbol"),
+                            b,
+                        )
+                    })
                     .collect();
                 visitor.visit_check_sat_assuming(ls)
             }
             DeclareConst { symbol, sort } => {
-                let symb = symbol.accept(visitor);
+                let symb = visitor.visit_fresh_symbol(symbol.0);
                 let sort = sort.accept(visitor);
+                visitor.bind_symbol(&symb);
                 visitor.visit_declare_const(symb, sort)
             }
             DeclareDatatype { symbol, datatype } => {
-                let s = symbol.accept(visitor);
-                let dt = datatype.remap(visitor, |v, s| s.accept(v), |v, s| s.accept(v));
+                let s = visitor.visit_fresh_symbol(symbol.0);
+                // Datatype may be recursive, so we bind the name early.
+                visitor.bind_symbol(&s);
+                // Note: we don't expect type parameters with declare-datatype but here
+                // we're going to handle them anyway.
+                let dt = datatype.remap(
+                    visitor,
+                    |v, s| {
+                        let s = v.visit_fresh_symbol(s.0);
+                        // Bind type parameters for the selector. This works because `remap`
+                        // calls this closure first on all parameters.
+                        v.bind_symbol(&s);
+                        s
+                    },
+                    |v, s| s.accept(v),
+                );
+                // Unbind type parameters for the selector.
+                dt.parameters.iter().for_each(|s| visitor.unbind_symbol(s));
+                // Bind constructor symbols.
+                dt.constructors
+                    .iter()
+                    .for_each(|c| visitor.bind_symbol(&c.symbol));
                 visitor.visit_declare_datatype(s, dt)
             }
             DeclareDatatypes { datatypes } => {
                 let dts = datatypes
                     .into_iter()
                     .map(|(s, n, dt)| {
-                        let s = s.accept(visitor);
-                        let dt = dt.remap(visitor, |v, s| s.accept(v), |v, s| s.accept(v));
+                        let s = visitor.visit_fresh_symbol(s.0);
+                        // Datatype may be recursive, so we bind the names early.
+                        visitor.bind_symbol(&s);
+                        (s, n, dt)
+                    })
+                    .collect::<Vec<_>>();
+                let dts = dts
+                    .into_iter()
+                    .map(|(s, n, dt)| {
+                        let dt = dt.remap(
+                            visitor,
+                            |v, s| {
+                                // Bind type parameters for the selector.
+                                let s = v.visit_fresh_symbol(s.0);
+                                v.bind_symbol(&s);
+                                s
+                            },
+                            |v, s| s.accept(v),
+                        );
+                        // Unbind type parameters for the selector.
+                        dt.parameters.iter().for_each(|s| visitor.unbind_symbol(s));
+                        // Bind constructor symbols.
+                        dt.constructors
+                            .iter()
+                            .for_each(|c| visitor.bind_symbol(&c.symbol));
                         (s, n, dt)
                     })
                     .collect();
@@ -726,32 +809,73 @@ impl Command {
                 parameters,
                 sort,
             } => {
-                let symb = symbol.accept(visitor);
+                let symb = visitor.visit_fresh_symbol(symbol.0);
                 let ps = parameters.into_iter().map(|s| s.accept(visitor)).collect();
                 let sort = sort.accept(visitor);
+                visitor.bind_symbol(&symb);
                 visitor.visit_declare_fun(symb, ps, sort)
             }
             DeclareSort { symbol, arity } => {
-                let s = symbol.accept(visitor);
+                let s = visitor.visit_fresh_symbol(symbol.0);
+                visitor.bind_symbol(&s);
                 visitor.visit_declare_sort(s, arity)
             }
             DefineFun { sig, term } => {
-                let s = sig.remap(visitor, |v, s| s.accept(v), |v, s| s.accept(v));
+                let sig = sig.remap(
+                    visitor,
+                    |v, s| v.visit_fresh_symbol(s.0),
+                    |v, s| s.accept(v),
+                );
+                sig.parameters
+                    .iter()
+                    .for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor);
-                visitor.visit_define_fun(s, t)
+                sig.parameters
+                    .iter()
+                    .for_each(|(s, _)| visitor.unbind_symbol(s));
+                visitor.bind_symbol(&sig.name);
+                visitor.visit_define_fun(sig, t)
             }
             DefineFunRec { sig, term } => {
-                let s = sig.remap(visitor, |v, s| s.accept(v), |v, s| s.accept(v));
+                let sig = sig.remap(
+                    visitor,
+                    |v, s| v.visit_fresh_symbol(s.0),
+                    |v, s| s.accept(v),
+                );
+                visitor.bind_symbol(&sig.name);
+                sig.parameters
+                    .iter()
+                    .for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor);
-                visitor.visit_define_fun_rec(s, t)
+                sig.parameters
+                    .iter()
+                    .for_each(|(s, _)| visitor.unbind_symbol(s));
+                visitor.visit_define_fun_rec(sig, t)
             }
             DefineFunsRec { funs } => {
                 let funs = funs
                     .into_iter()
-                    .map(|(s, t)| {
-                        let s = s.remap(visitor, |v, s| s.accept(v), |v, s| s.accept(v));
+                    .map(|(sig, t)| {
+                        let sig = sig.remap(
+                            visitor,
+                            |v, s| v.visit_fresh_symbol(s.0),
+                            |v, s| s.accept(v),
+                        );
+                        visitor.bind_symbol(&sig.name);
+                        sig.parameters
+                            .iter()
+                            .for_each(|(s, _)| visitor.bind_symbol(s));
+                        (sig, t)
+                    })
+                    .collect::<Vec<_>>();
+                let funs = funs
+                    .into_iter()
+                    .map(|(sig, t)| {
                         let t = t.accept(visitor);
-                        (s, t)
+                        sig.parameters
+                            .iter()
+                            .for_each(|(s, _)| visitor.unbind_symbol(s));
+                        (sig, t)
                     })
                     .collect();
                 visitor.visit_define_funs_rec(funs)
@@ -761,10 +885,16 @@ impl Command {
                 parameters,
                 sort,
             } => {
-                let symb = symbol.accept(visitor);
-                let ps = parameters.into_iter().map(|s| s.accept(visitor)).collect();
+                let symbol = visitor.visit_fresh_symbol(symbol.0);
+                let ps = parameters
+                    .into_iter()
+                    .map(|s| visitor.visit_fresh_symbol(s.0))
+                    .collect::<Vec<_>>();
+                ps.iter().for_each(|s| visitor.bind_symbol(s));
                 let sort = sort.accept(visitor);
-                visitor.visit_define_sort(symb, ps, sort)
+                ps.iter().for_each(|s| visitor.unbind_symbol(s));
+                visitor.bind_symbol(&symbol);
+                visitor.visit_define_sort(symbol, ps, sort)
             }
             Echo { message } => visitor.visit_echo(message),
             Exit => visitor.visit_exit(),
@@ -795,13 +925,15 @@ impl Command {
                 let v = value.remap(
                     visitor,
                     |v, c: self::Constant| c.accept(v),
-                    |v, s: Symbol| s.accept(v),
+                    |v, s: Symbol| v.visit_bound_symbol(s.0).expect("failed to resolve symbol"),
                     |v, e: SExpr| e.accept(v),
                 );
                 visitor.visit_set_info(k, v)
             }
             SetLogic { symbol } => {
-                let s = symbol.accept(visitor);
+                let s = visitor
+                    .visit_bound_symbol(symbol.0)
+                    .expect("failed to resolve symbol");
                 visitor.visit_set_logic(s)
             }
             SetOption { keyword, value } => {
@@ -809,7 +941,7 @@ impl Command {
                 let v = value.remap(
                     visitor,
                     |v, c: self::Constant| c.accept(v),
-                    |v, s: Symbol| s.accept(v),
+                    |v, s: Symbol| v.visit_bound_symbol(s.0).expect("failed to resolve symbol"),
                     |v, e: SExpr| e.accept(v),
                 );
                 visitor.visit_set_option(k, v)

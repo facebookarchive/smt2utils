@@ -23,7 +23,9 @@ pub struct Smt2Counters {
     pub hexadecimal_constant_count: usize,
     pub binary_constant_count: usize,
     pub string_constant_count: usize,
-    pub symbol_count: usize,
+    pub fresh_symbol_count: usize,
+    pub bound_symbol_count: usize,
+    pub any_symbol_count: usize,
     pub keyword_count: usize,
     pub constant_s_expr_count: usize,
     pub symbol_s_expr_count: usize,
@@ -155,9 +157,18 @@ impl ConstantVisitor for Smt2Counters {
 impl SymbolVisitor for Smt2Counters {
     type T = ();
 
-    fn visit_symbol(&mut self, value: String) -> Self::T {
-        self.symbol_count += 1;
+    fn visit_fresh_symbol(&mut self, _value: String) -> Self::T {
+        self.fresh_symbol_count += 1;
+    }
+
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, String> {
+        self.bound_symbol_count += 1;
         self.visit_symbol(&value);
+        Ok(())
+    }
+
+    fn visit_any_symbol(&mut self, _value: String) -> Self::T {
+        self.any_symbol_count += 1;
     }
 }
 

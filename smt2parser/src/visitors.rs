@@ -19,7 +19,22 @@ pub trait ConstantVisitor {
 pub trait SymbolVisitor {
     type T;
 
-    fn visit_symbol(&mut self, value: String) -> Self::T;
+    fn visit_fresh_symbol(&mut self, value: String) -> Self::T;
+
+    // If it is not a valid bound symbol, return an error containing the value.
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, String> {
+        Ok(self.visit_fresh_symbol(value))
+    }
+
+    // If it is not a valid bound symbol, create a fresh one.
+    fn visit_any_symbol(&mut self, value: String) -> Self::T {
+        self.visit_bound_symbol(value)
+            .unwrap_or_else(|v| self.visit_fresh_symbol(v))
+    }
+
+    fn bind_symbol(&mut self, _symbol: &Self::T) {}
+
+    fn unbind_symbol(&mut self, _symbol: &Self::T) {}
 }
 
 pub trait KeywordVisitor {

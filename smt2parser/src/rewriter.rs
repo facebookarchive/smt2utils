@@ -97,9 +97,30 @@ pub trait Rewriter {
     }
 
     // SymbolVisitor
-    fn visit_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
-        let value = self.visitor().visit_symbol(value);
+    fn visit_bound_symbol(
+        &mut self,
+        value: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Symbol, String> {
+        let value = self.visitor().visit_bound_symbol(value);
+        value.map(|s| self.process_symbol(s))
+    }
+
+    fn visit_fresh_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
+        let value = self.visitor().visit_fresh_symbol(value);
         self.process_symbol(value)
+    }
+
+    fn visit_any_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
+        let value = self.visitor().visit_any_symbol(value);
+        self.process_symbol(value)
+    }
+
+    fn bind_symbol(&mut self, symbol: &<Self::V as Smt2Visitor>::Symbol) {
+        self.visitor().bind_symbol(symbol);
+    }
+
+    fn unbind_symbol(&mut self, symbol: &<Self::V as Smt2Visitor>::Symbol) {
+        self.visitor().unbind_symbol(symbol);
     }
 
     // KeywordVisitor
@@ -488,8 +509,24 @@ where
 {
     type T = V::Symbol;
 
-    fn visit_symbol(&mut self, value: String) -> Self::T {
-        self.visit_symbol(value)
+    fn visit_fresh_symbol(&mut self, value: String) -> Self::T {
+        self.visit_fresh_symbol(value)
+    }
+
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, String> {
+        self.visit_bound_symbol(value)
+    }
+
+    fn visit_any_symbol(&mut self, value: String) -> Self::T {
+        self.visit_any_symbol(value)
+    }
+
+    fn bind_symbol(&mut self, symbol: &Self::T) {
+        self.bind_symbol(symbol)
+    }
+
+    fn unbind_symbol(&mut self, symbol: &Self::T) {
+        self.unbind_symbol(symbol)
     }
 }
 
