@@ -428,11 +428,11 @@ where
         use AttributeValue::*;
         match self {
             None => Ok(()),
-            Constant(c) => write!(f, " {}", c),
-            Symbol(s) => write!(f, " {}", s),
+            Constant(c) => write!(f, "{}", c),
+            Symbol(s) => write!(f, "{}", s),
             SExpr(values) => write!(
                 f,
-                " ({})",
+                "({})",
                 values
                     .iter()
                     .map(|i| format!("{}", i))

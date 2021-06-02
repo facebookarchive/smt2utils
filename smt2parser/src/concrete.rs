@@ -1181,7 +1181,10 @@ impl std::fmt::Display for Term {
                     term,
                     attributes
                         .iter()
-                        .map(|(key, value)| format!("{}{}", key, value))
+                        .map(|(key, value)| match value {
+                            AttributeValue::None => format!("{}", key),
+                            _ => format!("{} {}", key, value),
+                        })
                         .collect::<Vec<_>>()
                         .join(" "),
                 )

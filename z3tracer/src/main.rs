@@ -3,15 +3,12 @@
 
 #![forbid(unsafe_code)]
 
-use z3tracer::report::*;
-use z3tracer::{Model, ModelConfig};
+use z3tracer::{report::*, Model, ModelConfig};
 
 use multiset::HashMultiSet;
 use petgraph::graph::Graph;
 use plotters::prelude::*;
-use std::collections::*;
-use std::io::Write;
-use std::path::PathBuf;
+use std::{collections::*, io::Write, path::PathBuf};
 use structopt::StructOpt;
 
 /// Test utility for the parsing and the analysis of Z3 log files.
