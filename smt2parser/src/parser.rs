@@ -355,11 +355,11 @@ pomelo! {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{concrete::*, lexer::Lexer};
 
-    fn parse_tokens<I: IntoIterator<Item = Token>>(tokens: I) -> Result<Command, ()> {
+    pub(crate) fn parse_tokens<I: IntoIterator<Item = Token>>(tokens: I) -> Result<Command, ()> {
         let mut builder = SyntaxBuilder;
         let mut p = Parser::new(&mut builder);
         for token in tokens.into_iter() {

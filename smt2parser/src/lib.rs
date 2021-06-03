@@ -32,6 +32,7 @@ extern crate pomelo;
 pub mod concrete;
 mod lexer;
 mod parser;
+pub mod renaming;
 pub mod rewriter;
 pub mod stats;
 pub mod visitors;
