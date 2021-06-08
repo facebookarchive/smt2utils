@@ -471,7 +471,10 @@ impl Term {
                 arguments,
             } => {
                 let qi = qual_identifier.accept(visitor);
-                let ts = arguments.into_iter().map(|t| t.accept(visitor)).collect();
+                let mut ts = Vec::new();
+                for t in arguments {
+                    ts.push(t.accept(visitor));
+                }
                 visitor.visit_application(qi, ts)
             }
             Let { var_bindings, term } => {
