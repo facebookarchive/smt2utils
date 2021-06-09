@@ -96,7 +96,7 @@ fn make_z3_args(options: &Options) -> Vec<String> {
 #[derive(Debug)]
 enum Event {
     Done,
-    Query(Box<Result<smt2parser::concrete::Command, smt2parser::Position>>),
+    Query(Box<Result<smt2parser::concrete::Command, (smt2parser::Position, smt2parser::Error)>>),
 }
 
 fn spawn_child_stream_logger<R>(
