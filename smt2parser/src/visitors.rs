@@ -4,6 +4,7 @@
 //! The visiting traits expected by the SMT2 parser.
 
 use crate::{Binary, Decimal, Hexadecimal, Numeral};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 pub trait ConstantVisitor {
@@ -403,16 +404,9 @@ where
         // ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
         match self {
             Identifier::Simple { symbol } => write!(f, "{}", symbol),
-            Identifier::Indexed { symbol, indices } => write!(
-                f,
-                "(_ {} {})",
-                symbol,
-                indices
-                    .iter()
-                    .map(|i| format!("{}", i))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            Identifier::Indexed { symbol, indices } => {
+                write!(f, "(_ {} {})", symbol, indices.iter().format(" "))
+            }
         }
     }
 }
@@ -430,15 +424,7 @@ where
             None => Ok(()),
             Constant(c) => write!(f, "{}", c),
             Symbol(s) => write!(f, "{}", s),
-            SExpr(values) => write!(
-                f,
-                "({})",
-                values
-                    .iter()
-                    .map(|i| format!("{}", i))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            SExpr(values) => write!(f, "({})", values.iter().format(" ")),
         }
     }
 }
@@ -456,9 +442,10 @@ where
             self.symbol,
             self.selectors
                 .iter()
-                .map(|(symbol, sort)| format!("({} {})", symbol, sort))
-                .collect::<Vec<_>>()
-                .join(" ")
+                .format_with(" ", |(symbol, sort), f| f(&format_args!(
+                    "({} {})",
+                    symbol, sort
+                )))
         )
     }
 }
@@ -471,32 +458,10 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ( ⟨constructor_dec⟩+ ) | ( par ( ⟨symbol⟩+ ) ( ⟨constructor_dec⟩+ ) )
         if self.parameters.is_empty() {
-            write!(
-                f,
-                "({})",
-                self.constructors
-                    .iter()
-                    .map(|c| format!("{}", c))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            )
+            write!(f, "({})", self.constructors.iter().format(" "))
         } else {
-            let symbols = format!(
-                "({})",
-                self.parameters
-                    .iter()
-                    .map(|c| format!("{}", c))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-            let constructors = format!(
-                "({})",
-                self.constructors
-                    .iter()
-                    .map(|c| format!("{}", c))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
+            let symbols = format!("({})", self.parameters.iter().format(" "));
+            let constructors = format!("({})", self.constructors.iter().format(" "));
             write!(f, "(par {} {})", symbols, constructors)
         }
     }
@@ -512,9 +477,9 @@ where
         let params = self
             .parameters
             .iter()
-            .map(|(symbol, sort)| format!("({} {})", symbol, sort))
-            .collect::<Vec<_>>()
-            .join(" ");
+            .format_with(" ", |(symbol, sort), f| {
+                f(&format_args!("({} {})", symbol, sort))
+            });
         write!(f, "{} ({}) {}", self.name, params, self.result)
     }
 }

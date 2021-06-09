@@ -21,6 +21,7 @@ pomelo = "0.1.5"
 structopt = "0.3.12"
 fst = "0.4.5"
 serde = { version = "1.0.125", features = ["derive"] }
+itertools = "0.10.0"
 
 [[bin]]
 name = "smt2bin"
