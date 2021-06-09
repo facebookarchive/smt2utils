@@ -11,6 +11,7 @@ use crate::{
     },
     Binary, Decimal, Hexadecimal, Numeral,
 };
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 /// Concrete syntax for a constant.
@@ -1034,15 +1035,7 @@ impl std::fmt::Display for SExpr {
             Constant(c) => write!(f, "{}", c),
             Symbol(s) => write!(f, "{}", s),
             Keyword(k) => write!(f, "{}", k),
-            Application(values) => write!(
-                f,
-                "({})",
-                values
-                    .iter()
-                    .map(|v| format!("{}", v))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            Application(values) => write!(f, "({})", values.iter().format(" ")),
         }
     }
 }
@@ -1056,16 +1049,7 @@ impl std::fmt::Display for Sort {
             Parameterized {
                 identifier,
                 parameters,
-            } => write!(
-                f,
-                "({} {})",
-                identifier,
-                parameters
-                    .iter()
-                    .map(|v| format!("{}", v))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            } => write!(f, "({} {})", identifier, parameters.iter().format(" ")),
         }
     }
 }
@@ -1098,16 +1082,7 @@ impl std::fmt::Display for Term {
                 arguments,
             } => {
                 // ( ⟨qual_identifier ⟩ ⟨term⟩+ )
-                write!(
-                    f,
-                    "({} {})",
-                    qual_identifier,
-                    arguments
-                        .iter()
-                        .map(|v| format!("{}", v))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
+                write!(f, "({} {})", qual_identifier, arguments.iter().format(" "))
             }
             Let { var_bindings, term } => {
                 // ( let ( ⟨var_binding⟩+ ) ⟨term⟩ )
@@ -1116,9 +1091,7 @@ impl std::fmt::Display for Term {
                     "(let ({}) {})",
                     var_bindings
                         .iter()
-                        .map(|(v, t)| format!("({} {})", v, t))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                        .format_with(" ", |(v, t), f| f(&format_args!("({} {})", v, t))),
                     term
                 )
             }
@@ -1128,9 +1101,7 @@ impl std::fmt::Display for Term {
                     f,
                     "(forall ({}) {})",
                     vars.iter()
-                        .map(|(v, s)| format!("({} {})", v, s))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                        .format_with(" ", |(v, s), f| f(&format_args!("({} {})", v, s))),
                     term
                 )
             }
@@ -1140,9 +1111,7 @@ impl std::fmt::Display for Term {
                     f,
                     "(exists ({}) {})",
                     vars.iter()
-                        .map(|(v, s)| format!("({} {})", v, s))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                        .format_with(" ", |(v, s), f| f(&format_args!("({} {})", v, s))),
                     term
                 )
             }
@@ -1152,28 +1121,13 @@ impl std::fmt::Display for Term {
                     f,
                     "(match {} ({}))",
                     term,
-                    cases
-                        .iter()
-                        .map(|(pattern, term)| {
-                            let s = {
-                                // ⟨symbol⟩ | ( ⟨symbol⟩ ⟨symbol⟩+ )
-                                if pattern.len() == 1 {
-                                    format!("{}", pattern[0])
-                                } else {
-                                    format!(
-                                        "({})",
-                                        pattern
-                                            .iter()
-                                            .map(|s| format!("{}", s))
-                                            .collect::<Vec<_>>()
-                                            .join(" ")
-                                    )
-                                }
-                            };
-                            format!("({} {})", s, term)
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    cases.iter().format_with(" ", |(pattern, term), f| {
+                        if pattern.len() == 1 {
+                            f(&format_args!("({} {})", &pattern[0], term))
+                        } else {
+                            f(&format_args!("(({}) {})", pattern.iter().format(" "), term))
+                        }
+                    })
                 )
             }
             Attributes { term, attributes } => {
@@ -1184,12 +1138,10 @@ impl std::fmt::Display for Term {
                     term,
                     attributes
                         .iter()
-                        .map(|(key, value)| match value {
-                            AttributeValue::None => format!("{}", key),
-                            _ => format!("{} {}", key, value),
+                        .format_with(" ", |(key, value), f| match value {
+                            AttributeValue::None => f(key),
+                            _ => f(&format_args!("{} {}", key, value)),
                         })
-                        .collect::<Vec<_>>()
-                        .join(" "),
                 )
             }
         }
@@ -1207,18 +1159,14 @@ impl std::fmt::Display for Command {
                 write!(
                     f,
                     "(check-sat-assuming ({}))",
-                    literals
-                        .iter()
-                        .map(|(s, b)| {
-                            // ⟨symbol⟩ | ( not ⟨symbol⟩ )
-                            if *b {
-                                format!("{}", s)
-                            } else {
-                                format!("(not {})", s)
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    literals.iter().format_with(" ", |(s, b), f| {
+                        // ⟨symbol⟩ | ( not ⟨symbol⟩ )
+                        if *b {
+                            f(s)
+                        } else {
+                            f(&format_args!("(not {})", s))
+                        }
+                    })
                 )
             }
             DeclareConst { symbol, sort } => write!(f, "(declare-const {} {})", symbol, sort),
@@ -1227,16 +1175,10 @@ impl std::fmt::Display for Command {
             }
             DeclareDatatypes { datatypes } => {
                 // ( declare-datatypes ( ⟨sort_dec⟩n+1 ) ( ⟨datatype_dec⟩n+1 ) )
-                let sorts = datatypes
-                    .iter()
-                    .map(|(sym, num, _)| format!("({} {})", sym, num))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let types = datatypes
-                    .iter()
-                    .map(|(_, _, ty)| format!("{}", ty))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let sorts = datatypes.iter().format_with(" ", |(sym, num, _), f| {
+                    f(&format_args!("({} {})", sym, num))
+                });
+                let types = datatypes.iter().format_with(" ", |(_, _, ty), f| f(ty));
                 write!(f, "(declare-datatypes ({}) ({}))", sorts, types)
             }
             DeclareFun {
@@ -1249,11 +1191,7 @@ impl std::fmt::Display for Command {
                     f,
                     "(declare-fun {} ({}) {})",
                     symbol,
-                    parameters
-                        .iter()
-                        .map(|s| format!("{}", s))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    parameters.iter().format(" "),
                     sort
                 )
             }
@@ -1273,16 +1211,8 @@ impl std::fmt::Display for Command {
             }
             DefineFunsRec { funs } => {
                 // ( define-funs-rec ( ( ⟨function_dec⟩ )n+1 ) ( ⟨term⟩n+1 ) )
-                let sigs = funs
-                    .iter()
-                    .map(|(sig, _)| format!("({})", sig))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let terms = funs
-                    .iter()
-                    .map(|(_, t)| format!("{}", t))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let sigs = funs.iter().format_with(" ", |(sig, _), f| f(sig));
+                let terms = funs.iter().format_with(" ", |(_, t), f| f(t));
                 write!(f, "(define-funs-rec ({}) ({}))", sigs, terms)
             }
             DefineSort {
@@ -1295,11 +1225,7 @@ impl std::fmt::Display for Command {
                     f,
                     "(define-sort {} ({}) {})",
                     symbol,
-                    parameters
-                        .iter()
-                        .map(|s| format!("{}", s))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    parameters.iter().format(" "),
                     sort
                 )
             }
@@ -1315,15 +1241,7 @@ impl std::fmt::Display for Command {
             GetUnsatCore => write!(f, "(get-unsat-core)"),
             GetValue { terms } => {
                 // ( get-value ( ⟨term⟩+ ) )
-                write!(
-                    f,
-                    "(get-value ({}))",
-                    terms
-                        .iter()
-                        .map(|t| format!("{}", t))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
+                write!(f, "(get-value ({}))", terms.iter().format(" "))
             }
             Pop { level } => write!(f, "(pop {})", Constant::Numeral(level.clone())),
             Push { level } => write!(f, "(push {})", Constant::Numeral(level.clone())),
