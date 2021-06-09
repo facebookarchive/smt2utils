@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "smt2patch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "rand",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "smt2proxy"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rand",
  "smt2parser",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "z3tracer"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "multiset",

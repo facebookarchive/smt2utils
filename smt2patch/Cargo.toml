@@ -1,6 +1,6 @@
 [package]
 name = "smt2patch"
-version = "0.1.0"
+version = "0.1.1"
 description = "Library and binary tool to patch SMT2 files"
 repository = "https://github.com/facebookincubator/smt2utils"
 documentation = "https://docs.rs/smt2patch"
