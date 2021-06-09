@@ -20,17 +20,21 @@ impl<V> TesterModernizer<V> {
     }
 }
 
-impl<V> Rewriter for TesterModernizer<V>
+impl<V, Error> Rewriter for TesterModernizer<V>
 where
-    V: Smt2Visitor<QualIdentifier = QualIdentifier, Symbol = Symbol>,
+    V: Smt2Visitor<QualIdentifier = QualIdentifier, Symbol = Symbol, Error = Error>,
 {
     type V = V;
+    type Error = Error;
 
     fn visitor(&mut self) -> &mut V {
         &mut self.0
     }
 
-    fn visit_simple_identifier(&mut self, value: Identifier<Symbol>) -> QualIdentifier {
+    fn visit_simple_identifier(
+        &mut self,
+        value: Identifier<Symbol>,
+    ) -> Result<QualIdentifier, Error> {
         let value = match value {
             Identifier::Simple { symbol } if symbol.0.starts_with("is-") => {
                 let is = Symbol("is".to_string());
@@ -93,17 +97,18 @@ impl<V> SymbolNormalizer<V> {
     }
 }
 
-impl<V> Rewriter for SymbolNormalizer<V>
+impl<V, Error> Rewriter for SymbolNormalizer<V>
 where
-    V: Smt2Visitor<Symbol = Symbol>,
+    V: Smt2Visitor<Symbol = Symbol, Error = Error>,
 {
     type V = V;
+    type Error = Error;
 
     fn visitor(&mut self) -> &mut V {
         &mut self.visitor
     }
 
-    fn visit_bound_symbol(&mut self, value: String) -> Result<Symbol, String> {
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Symbol, Error> {
         let value = self
             .bound_symbols
             .get(&value)
@@ -112,10 +117,10 @@ where
                 self.global_symbols.insert(value.clone());
                 Symbol(value)
             });
-        Ok(self.process_symbol(value))
+        Ok(self.process_symbol(value)?)
     }
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Symbol {
+    fn visit_fresh_symbol(&mut self, value: String) -> Result<Symbol, Error> {
         let s = Self::get_symbol(self.local_symbols.len());
         self.local_symbols.push(value);
         self.process_symbol(s)
@@ -161,12 +166,15 @@ fn test_testers() {
     ));
     assert_eq!(
         value,
-        value.clone().accept(&mut crate::concrete::SyntaxBuilder)
+        value
+            .clone()
+            .accept(&mut crate::concrete::SyntaxBuilder)
+            .unwrap()
     );
     // Visit with the TesterModernizer this time.
     let mut builder = TesterModernizer::<SyntaxBuilder>::default();
     assert!(matches!(
-        value.clone().accept(&mut builder),
+        value.clone().accept(&mut builder).unwrap(),
         Command::Assert {
             term: Term::Application {
                 qual_identifier: QualIdentifier::Simple {
@@ -207,11 +215,14 @@ fn test_declare_datatypes_renaming() {
 
     assert_eq!(
         value,
-        value.clone().accept(&mut crate::concrete::SyntaxBuilder)
+        value
+            .clone()
+            .accept(&mut crate::concrete::SyntaxBuilder)
+            .unwrap()
     );
 
     let mut builder = SymbolNormalizer::<SyntaxBuilder>::default();
-    assert_eq!(value2, value.clone().accept(&mut builder));
+    assert_eq!(value2, value.clone().accept(&mut builder).unwrap());
 }
 
 #[test]
@@ -259,7 +270,7 @@ fn test_symbol_renaming() {
 
     let mut builder = SymbolNormalizer::<SyntaxBuilder>::default();
 
-    let command2 = command.accept(&mut builder);
+    let command2 = command.accept(&mut builder).unwrap();
     let command3 = Command::Assert {
         term: Term::Let {
             var_bindings: vec![(

@@ -44,14 +44,19 @@ fn process_file<T, F>(state: T, file_path: PathBuf, f: F) -> std::io::Result<T>
 where
     T: smt2parser::visitors::Smt2Visitor,
     F: Fn(T::Command),
+    T::Error: std::fmt::Display,
 {
     let file = std::io::BufReader::new(std::fs::File::open(&file_path)?);
     let mut stream = CommandStream::new(file, state);
     for result in &mut stream {
         match result {
             Ok(command) => f(command),
-            Err(error) => {
-                eprintln!("error:\n --> {}", error.location_in_file(&file_path));
+            Err((position, error)) => {
+                eprintln!(
+                    "error: {}:\n --> {}",
+                    error,
+                    position.location_in_file(&file_path)
+                );
                 break;
             }
         }

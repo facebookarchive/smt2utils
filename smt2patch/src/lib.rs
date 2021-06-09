@@ -15,6 +15,7 @@ use std::{
     str::FromStr,
 };
 use structopt::StructOpt;
+use thiserror::Error;
 
 /// Configuration for the SMT2 rewriting operations.
 #[derive(Debug, Clone, StructOpt)]
@@ -97,18 +98,6 @@ impl Rewriter {
         Symbol(s)
     }
 
-    // Hack: This value is returned when we mean to discard a command.
-    #[inline]
-    fn assert_true() -> Command {
-        Command::Assert {
-            term: Term::QualIdentifier(QualIdentifier::Simple {
-                identifier: Identifier::Simple {
-                    symbol: Symbol("true".to_string()),
-                },
-            }),
-        }
-    }
-
     fn get_clause_name(term: &Term) -> Option<&Symbol> {
         if let Some(AttributeValue::Symbol(s)) = Self::get_attribute(term, "named") {
             return Some(s);
@@ -157,14 +146,29 @@ impl Rewriter {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    Error(smt2parser::concrete::Error),
+    #[error("Command was skipped")]
+    SkipCommand,
+}
+
+impl std::convert::From<smt2parser::concrete::Error> for Error {
+    fn from(e: smt2parser::concrete::Error) -> Self {
+        Self::Error(e)
+    }
+}
+
 impl smt2parser::rewriter::Rewriter for Rewriter {
     type V = SyntaxBuilder;
+    type Error = Error;
 
     fn visitor(&mut self) -> &mut SyntaxBuilder {
         &mut self.builder
     }
 
-    fn process_symbol(&mut self, symbol: Symbol) -> Symbol {
+    fn process_symbol(&mut self, symbol: Symbol) -> Result<Symbol, Error> {
         // Bump clause_count and quantifier_count when needed to avoid
         // clashes with user-provided symbols.
         if symbol.0.starts_with(CLAUSE) {
@@ -176,10 +180,10 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
                 self.clause_count = std::cmp::max(self.clause_count, i + 1);
             }
         }
-        symbol
+        Ok(symbol)
     }
 
-    fn visit_forall(&mut self, vars: Vec<(Symbol, Sort)>, term: Term) -> Term {
+    fn visit_forall(&mut self, vars: Vec<(Symbol, Sort)>, term: Term) -> Result<Term, Error> {
         let name = Self::get_quantifier_name(&term)
             .cloned()
             .unwrap_or_else(|| self.make_quantifier_name());
@@ -205,11 +209,11 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
                 )
             }
         };
-        let value = self.visitor().visit_forall(vars, term);
+        let value = self.visitor().visit_forall(vars, term)?;
         self.process_term(value)
     }
 
-    fn visit_assert(&mut self, term: Term) -> Command {
+    fn visit_assert(&mut self, term: Term) -> Result<Command, Error> {
         let name = Self::get_clause_name(&term)
             .cloned()
             .unwrap_or_else(|| self.make_clause_name(&term));
@@ -217,7 +221,7 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
             if !list.contains(&name.0) && !list.contains(&format!("|{}|", &name.0)) {
                 // Discard clause.
                 eprintln!("Discarding {}", name.0);
-                return Self::assert_true();
+                return Err(Error::SkipCommand);
             }
         }
         let term = if self.config.get_unsat_core {
@@ -225,24 +229,28 @@ impl smt2parser::rewriter::Rewriter for Rewriter {
         } else {
             term
         };
-        let value = self.visitor().visit_assert(term);
+        let value = self.visitor().visit_assert(term)?;
         self.process_command(value)
     }
 
-    fn visit_set_option(&mut self, keyword: Keyword, value: AttributeValue) -> Command {
+    fn visit_set_option(
+        &mut self,
+        keyword: Keyword,
+        value: AttributeValue,
+    ) -> Result<Command, Error> {
         if self.discarded_options.contains(&keyword.0) {
-            return Self::assert_true();
+            return Err(Error::SkipCommand);
         }
-        let value = self.visitor().visit_set_option(keyword, value);
+        let value = self.visitor().visit_set_option(keyword, value)?;
         self.process_command(value)
     }
 
-    fn visit_get_unsat_core(&mut self) -> Command {
+    fn visit_get_unsat_core(&mut self) -> Result<Command, Error> {
         if self.config.get_unsat_core {
             // Will be re-added in Patcher.
-            return Self::assert_true();
+            return Err(Error::SkipCommand);
         }
-        let value = self.visitor().visit_get_unsat_core();
+        let value = self.visitor().visit_get_unsat_core()?;
         self.process_command(value)
     }
 }
@@ -276,10 +284,8 @@ impl Patcher {
         }
         let rewriter = Rewriter::new(self.config.rewriter_config.clone(), discarded_options);
         let mut stream = smt2parser::CommandStream::new(file, rewriter);
-        let assert_true = Rewriter::assert_true();
         for result in &mut stream {
             match result {
-                Ok(command) if command == assert_true => {}
                 Ok(command)
                     if self.config.rewriter_config.get_unsat_core
                         && command == Command::CheckSat =>
@@ -290,8 +296,9 @@ impl Patcher {
                 Ok(command) => {
                     self.script.push(command);
                 }
-                Err(error) => {
-                    panic!("error:\n --> {}", error.location_in_file(path));
+                Err((_, Error::SkipCommand)) => {}
+                Err((position, error)) => {
+                    panic!("error: {}\n --> {}", error, position.location_in_file(path));
                 }
             }
         }

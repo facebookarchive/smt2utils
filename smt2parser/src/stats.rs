@@ -136,48 +136,59 @@ impl Term {
 
 impl ConstantVisitor for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_numeral_constant(&mut self, _value: Numeral) -> Self::T {
+    fn visit_numeral_constant(&mut self, _value: Numeral) -> Result<Self::T, Self::E> {
         self.numeral_constant_count += 1;
+        Ok(())
     }
-    fn visit_decimal_constant(&mut self, _value: Decimal) -> Self::T {
+    fn visit_decimal_constant(&mut self, _value: Decimal) -> Result<Self::T, Self::E> {
         self.decimal_constant_count += 1;
+        Ok(())
     }
-    fn visit_hexadecimal_constant(&mut self, _value: Hexadecimal) -> Self::T {
+    fn visit_hexadecimal_constant(&mut self, _value: Hexadecimal) -> Result<Self::T, Self::E> {
         self.hexadecimal_constant_count += 1;
+        Ok(())
     }
-    fn visit_binary_constant(&mut self, _value: Binary) -> Self::T {
+    fn visit_binary_constant(&mut self, _value: Binary) -> Result<Self::T, Self::E> {
         self.binary_constant_count += 1;
+        Ok(())
     }
-    fn visit_string_constant(&mut self, _value: String) -> Self::T {
+    fn visit_string_constant(&mut self, _value: String) -> Result<Self::T, Self::E> {
         self.string_constant_count += 1;
+        Ok(())
     }
 }
 
 impl SymbolVisitor for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_fresh_symbol(&mut self, _value: String) -> Self::T {
+    fn visit_fresh_symbol(&mut self, _value: String) -> Result<Self::T, Self::E> {
         self.fresh_symbol_count += 1;
+        Ok(())
     }
 
-    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, String> {
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.bound_symbol_count += 1;
         self.visit_symbol(&value);
         Ok(())
     }
 
-    fn visit_any_symbol(&mut self, _value: String) -> Self::T {
+    fn visit_any_symbol(&mut self, _value: String) -> Result<Self::T, Self::E> {
         self.any_symbol_count += 1;
+        Ok(())
     }
 }
 
 impl KeywordVisitor for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_keyword(&mut self, value: String) -> Self::T {
+    fn visit_keyword(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.keyword_count += 1;
         self.visit_keyword(&value);
+        Ok(())
     }
 }
 
@@ -195,101 +206,140 @@ type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
 
 impl SExprVisitor<Constant, Symbol, Keyword> for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_constant_s_expr(&mut self, _value: Constant) -> Self::T {
+    fn visit_constant_s_expr(&mut self, _value: Constant) -> Result<Self::T, Self::E> {
         self.constant_s_expr_count += 1;
+        Ok(())
     }
 
-    fn visit_symbol_s_expr(&mut self, _value: Symbol) -> Self::T {
+    fn visit_symbol_s_expr(&mut self, _value: Symbol) -> Result<Self::T, Self::E> {
         self.symbol_s_expr_count += 1;
+        Ok(())
     }
 
-    fn visit_keyword_s_expr(&mut self, _value: Keyword) -> Self::T {
+    fn visit_keyword_s_expr(&mut self, _value: Keyword) -> Result<Self::T, Self::E> {
         self.keyword_s_expr_count += 1;
+        Ok(())
     }
 
-    fn visit_application_s_expr(&mut self, _values: Vec<Self::T>) -> Self::T {
+    fn visit_application_s_expr(&mut self, _values: Vec<Self::T>) -> Result<Self::T, Self::E> {
         self.application_s_expr_count += 1;
+        Ok(())
     }
 }
 
 impl SortVisitor<Symbol> for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_simple_sort(&mut self, _identifier: Identifier) -> Self::T {
+    fn visit_simple_sort(&mut self, _identifier: Identifier) -> Result<Self::T, Self::E> {
         self.simple_sort_count += 1;
+        Ok(())
     }
 
     fn visit_parameterized_sort(
         &mut self,
         _identifier: Identifier,
         _parameters: Vec<Self::T>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.parameterized_sort_count += 1;
+        Ok(())
     }
 }
 
 impl QualIdentifierVisitor<Identifier, Sort> for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_simple_identifier(&mut self, _identifier: Identifier) -> Self::T {
+    fn visit_simple_identifier(&mut self, _identifier: Identifier) -> Result<Self::T, Self::E> {
         self.simple_identifier_count += 1;
+        Ok(())
     }
 
-    fn visit_sorted_identifier(&mut self, _identifier: Identifier, _sort: Sort) -> Self::T {
+    fn visit_sorted_identifier(
+        &mut self,
+        _identifier: Identifier,
+        _sort: Sort,
+    ) -> Result<Self::T, Self::E> {
         self.sorted_identifier_count += 1;
+        Ok(())
     }
 }
 
 impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for Smt2Counters {
     type T = Term;
+    type E = crate::concrete::Error;
 
-    fn visit_constant(&mut self, _constant: Constant) -> Self::T {
+    fn visit_constant(&mut self, _constant: Constant) -> Result<Self::T, Self::E> {
         self.constant_count += 1;
-        Term::default()
+        Ok(Term::default())
     }
 
-    fn visit_qual_identifier(&mut self, _qual_identifier: QualIdentifier) -> Self::T {
+    fn visit_qual_identifier(
+        &mut self,
+        _qual_identifier: QualIdentifier,
+    ) -> Result<Self::T, Self::E> {
         self.qual_identifier_count += 1;
-        Term::default()
+        Ok(Term::default())
     }
 
     fn visit_application(
         &mut self,
         _qual_identifier: QualIdentifier,
         arguments: Vec<Self::T>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.application_count += 1;
-        Term::node(arguments.into_iter())
+        Ok(Term::node(arguments.into_iter()))
     }
 
-    fn visit_let(&mut self, var_bindings: Vec<(Symbol, Self::T)>, term: Self::T) -> Self::T {
+    fn visit_let(
+        &mut self,
+        var_bindings: Vec<(Symbol, Self::T)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.let_count += 1;
-        Term::node(std::iter::once(term).chain(var_bindings.into_iter().map(|(_, t)| t)))
+        Ok(Term::node(
+            std::iter::once(term).chain(var_bindings.into_iter().map(|(_, t)| t)),
+        ))
     }
 
-    fn visit_forall(&mut self, _vars: Vec<(Symbol, Sort)>, term: Self::T) -> Self::T {
+    fn visit_forall(
+        &mut self,
+        _vars: Vec<(Symbol, Sort)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.forall_count += 1;
-        Term::node(std::iter::once(term))
+        Ok(Term::node(std::iter::once(term)))
     }
 
-    fn visit_exists(&mut self, _vars: Vec<(Symbol, Sort)>, term: Self::T) -> Self::T {
+    fn visit_exists(
+        &mut self,
+        _vars: Vec<(Symbol, Sort)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.exists_count += 1;
-        Term::node(std::iter::once(term))
+        Ok(Term::node(std::iter::once(term)))
     }
 
-    fn visit_match(&mut self, term: Self::T, cases: Vec<(Vec<Symbol>, Self::T)>) -> Self::T {
+    fn visit_match(
+        &mut self,
+        term: Self::T,
+        cases: Vec<(Vec<Symbol>, Self::T)>,
+    ) -> Result<Self::T, Self::E> {
         self.match_count += 1;
-        Term::node(std::iter::once(term).chain(cases.into_iter().map(|(_, t)| t)))
+        Ok(Term::node(
+            std::iter::once(term).chain(cases.into_iter().map(|(_, t)| t)),
+        ))
     }
 
     fn visit_attributes(
         &mut self,
         term: Self::T,
         _attributes: Vec<(Keyword, AttributeValue)>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.attributes_count += 1;
-        Term::node(std::iter::once(term))
+        Ok(Term::node(std::iter::once(term)))
     }
 }
 
@@ -305,33 +355,47 @@ impl Smt2Counters {
 
 impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counters {
     type T = ();
+    type E = crate::concrete::Error;
 
-    fn visit_assert(&mut self, term: Term) -> Self::T {
+    fn visit_assert(&mut self, term: Term) -> Result<Self::T, Self::E> {
         self.assert_count += 1;
-        self.visit_term(term)
+        self.visit_term(term);
+        Ok(())
     }
 
-    fn visit_check_sat(&mut self) -> Self::T {
+    fn visit_check_sat(&mut self) -> Result<Self::T, Self::E> {
         self.check_sat_count += 1;
+        Ok(())
     }
 
-    fn visit_check_sat_assuming(&mut self, _literals: Vec<(Symbol, bool)>) -> Self::T {
+    fn visit_check_sat_assuming(
+        &mut self,
+        _literals: Vec<(Symbol, bool)>,
+    ) -> Result<Self::T, Self::E> {
         self.check_sat_assuming_count += 1;
+        Ok(())
     }
 
-    fn visit_declare_const(&mut self, _symbol: Symbol, _sort: Sort) -> Self::T {
+    fn visit_declare_const(&mut self, _symbol: Symbol, _sort: Sort) -> Result<Self::T, Self::E> {
         self.declare_const_count += 1;
+        Ok(())
     }
 
-    fn visit_declare_datatype(&mut self, _symbol: Symbol, _datatype: DatatypeDec) -> Self::T {
+    fn visit_declare_datatype(
+        &mut self,
+        _symbol: Symbol,
+        _datatype: DatatypeDec,
+    ) -> Result<Self::T, Self::E> {
         self.declare_datatype_count += 1;
+        Ok(())
     }
 
     fn visit_declare_datatypes(
         &mut self,
         _datatypes: Vec<(Symbol, Numeral, DatatypeDec)>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.declare_datatypes_count += 1;
+        Ok(())
     }
 
     fn visit_declare_fun(
@@ -339,29 +403,37 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counte
         _symbol: Symbol,
         _parameters: Vec<Sort>,
         _sort: Sort,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.declare_fun_count += 1;
+        Ok(())
     }
 
-    fn visit_declare_sort(&mut self, _symbol: Symbol, _arity: Numeral) -> Self::T {
+    fn visit_declare_sort(&mut self, _symbol: Symbol, _arity: Numeral) -> Result<Self::T, Self::E> {
         self.declare_sort_count += 1;
+        Ok(())
     }
 
-    fn visit_define_fun(&mut self, _sig: FunctionDec, term: Term) -> Self::T {
+    fn visit_define_fun(&mut self, _sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
         self.define_fun_count += 1;
-        self.visit_term(term)
+        self.visit_term(term);
+        Ok(())
     }
 
-    fn visit_define_fun_rec(&mut self, _sig: FunctionDec, term: Term) -> Self::T {
+    fn visit_define_fun_rec(&mut self, _sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
         self.define_fun_rec_count += 1;
-        self.visit_term(term)
+        self.visit_term(term);
+        Ok(())
     }
 
-    fn visit_define_funs_rec(&mut self, funs: Vec<(FunctionDec, Term)>) -> Self::T {
+    fn visit_define_funs_rec(
+        &mut self,
+        funs: Vec<(FunctionDec, Term)>,
+    ) -> Result<Self::T, Self::E> {
         self.define_funs_rec_count += 1;
         for (_, term) in funs {
             self.visit_term(term);
         }
+        Ok(())
     }
 
     fn visit_define_sort(
@@ -369,87 +441,115 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counte
         _symbol: Symbol,
         _parameters: Vec<Symbol>,
         _sort: Sort,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.define_sort_count += 1;
+        Ok(())
     }
 
-    fn visit_echo(&mut self, _message: String) -> Self::T {
+    fn visit_echo(&mut self, _message: String) -> Result<Self::T, Self::E> {
         self.echo_count += 1;
+        Ok(())
     }
 
-    fn visit_exit(&mut self) -> Self::T {
+    fn visit_exit(&mut self) -> Result<Self::T, Self::E> {
         self.exit_count += 1;
+        Ok(())
     }
 
-    fn visit_get_assertions(&mut self) -> Self::T {
+    fn visit_get_assertions(&mut self) -> Result<Self::T, Self::E> {
         self.get_assertions_count += 1;
+        Ok(())
     }
 
-    fn visit_get_assignment(&mut self) -> Self::T {
+    fn visit_get_assignment(&mut self) -> Result<Self::T, Self::E> {
         self.get_assignment_count += 1;
+        Ok(())
     }
 
-    fn visit_get_info(&mut self, _flag: Keyword) -> Self::T {
+    fn visit_get_info(&mut self, _flag: Keyword) -> Result<Self::T, Self::E> {
         self.get_info_count += 1;
+        Ok(())
     }
 
-    fn visit_get_model(&mut self) -> Self::T {
+    fn visit_get_model(&mut self) -> Result<Self::T, Self::E> {
         self.get_model_count += 1;
+        Ok(())
     }
 
-    fn visit_get_option(&mut self, _keyword: Keyword) -> Self::T {
+    fn visit_get_option(&mut self, _keyword: Keyword) -> Result<Self::T, Self::E> {
         self.get_option_count += 1;
+        Ok(())
     }
 
-    fn visit_get_proof(&mut self) -> Self::T {
+    fn visit_get_proof(&mut self) -> Result<Self::T, Self::E> {
         self.get_proof_count += 1;
+        Ok(())
     }
 
-    fn visit_get_unsat_assumptions(&mut self) -> Self::T {
+    fn visit_get_unsat_assumptions(&mut self) -> Result<Self::T, Self::E> {
         self.get_unsat_assumptions_count += 1;
+        Ok(())
     }
 
-    fn visit_get_unsat_core(&mut self) -> Self::T {
+    fn visit_get_unsat_core(&mut self) -> Result<Self::T, Self::E> {
         self.get_unsat_core_count += 1;
+        Ok(())
     }
 
-    fn visit_get_value(&mut self, terms: Vec<Term>) -> Self::T {
+    fn visit_get_value(&mut self, terms: Vec<Term>) -> Result<Self::T, Self::E> {
         self.get_value_count += 1;
         for term in terms {
             self.visit_term(term);
         }
+        Ok(())
     }
 
-    fn visit_pop(&mut self, _level: Numeral) -> Self::T {
+    fn visit_pop(&mut self, _level: Numeral) -> Result<Self::T, Self::E> {
         self.pop_count += 1;
+        Ok(())
     }
 
-    fn visit_push(&mut self, _level: Numeral) -> Self::T {
+    fn visit_push(&mut self, _level: Numeral) -> Result<Self::T, Self::E> {
         self.push_count += 1;
+        Ok(())
     }
 
-    fn visit_reset(&mut self) -> Self::T {
+    fn visit_reset(&mut self) -> Result<Self::T, Self::E> {
         self.reset_count += 1;
+        Ok(())
     }
 
-    fn visit_reset_assertions(&mut self) -> Self::T {
+    fn visit_reset_assertions(&mut self) -> Result<Self::T, Self::E> {
         self.reset_assertions_count += 1;
+        Ok(())
     }
 
-    fn visit_set_info(&mut self, _keyword: Keyword, _value: AttributeValue) -> Self::T {
+    fn visit_set_info(
+        &mut self,
+        _keyword: Keyword,
+        _value: AttributeValue,
+    ) -> Result<Self::T, Self::E> {
         self.set_info_count += 1;
+        Ok(())
     }
 
-    fn visit_set_logic(&mut self, _symbol: Symbol) -> Self::T {
+    fn visit_set_logic(&mut self, _symbol: Symbol) -> Result<Self::T, Self::E> {
         self.set_logic_count += 1;
+        Ok(())
     }
 
-    fn visit_set_option(&mut self, _keyword: Keyword, _value: AttributeValue) -> Self::T {
+    fn visit_set_option(
+        &mut self,
+        _keyword: Keyword,
+        _value: AttributeValue,
+    ) -> Result<Self::T, Self::E> {
         self.set_option_count += 1;
+        Ok(())
     }
 }
 
 impl Smt2Visitor for Smt2Counters {
+    type Error = crate::concrete::Error;
     type Constant = ();
     type QualIdentifier = ();
     type Keyword = ();
@@ -458,4 +558,12 @@ impl Smt2Visitor for Smt2Counters {
     type Symbol = ();
     type Term = Term;
     type Command = ();
+
+    fn syntax_error(&mut self) -> Self::Error {
+        crate::concrete::Error::SyntaxError
+    }
+
+    fn parsing_error(&mut self, s: String) -> Self::Error {
+        crate::concrete::Error::ParsingError(s)
+    }
 }

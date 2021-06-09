@@ -12,7 +12,7 @@
 //! ```
 //! # use smt2parser::{CommandStream, concrete};
 //! let input = b"(echo \"Hello world!\")(exit)";
-//! let mut stream = CommandStream::new(
+//! let stream = CommandStream::new(
 //!     &input[..],
 //!     concrete::SyntaxBuilder,
 //! );
@@ -48,6 +48,8 @@ pub type Hexadecimal = Vec<Nibble>;
 /// SMT2 binary values.
 pub type Binary = Vec<bool>;
 
+/// A minimal error type.
+pub use concrete::Error;
 /// A position in the input.
 pub use lexer::Position;
 
@@ -91,9 +93,9 @@ where
     R: std::io::BufRead,
     T: visitors::Smt2Visitor,
 {
-    type Item = Result<T::Command, Position>;
+    type Item = Result<T::Command, (Position, T::Error)>;
 
-    fn next(&mut self) -> Option<Result<T::Command, Position>> {
+    fn next(&mut self) -> Option<Result<T::Command, (Position, T::Error)>> {
         let mut parser = parser::Parser::new(&mut self.visitor);
         let mut unmatched_paren = 0;
         while let Some(token) = self.lexer.next() {
@@ -106,17 +108,65 @@ where
                 }
                 _ => (),
             }
-            if let Err(()) = parser.parse(token) {
-                return Some(Err(self.lexer.current_position()));
+            if let Err(err) = parser.parse(token) {
+                return Some(Err((self.lexer.current_position(), err)));
             }
             if unmatched_paren == 0 {
                 return match parser.end_of_input() {
                     Ok((command, _)) => Some(Ok(command)),
-                    Err(()) => Some(Err(self.lexer.current_position())),
+                    Err(err) => Some(Err((self.lexer.current_position(), err))),
                 };
             }
         }
-        // TODO: lexing error.
-        None
+        if unmatched_paren > 0 {
+            // We ran out of valid tokens in the middle of a command.
+            Some(Err((
+                self.lexer.current_position(),
+                parser
+                    .into_extra()
+                    .parsing_error("unexpected end of input".into()),
+            )))
+        } else {
+            // There are no more valid tokens to parse.
+            // TODO: report invalid tokens as an error.
+            None
+        }
     }
+}
+
+#[test]
+fn test_command_stream_error() {
+    let input = b"(echo \"Hello world!\")(exit f)";
+    let stream = CommandStream::new(&input[..], concrete::SyntaxBuilder);
+    let commands = stream.collect::<Vec<_>>();
+    assert!(matches!(
+        commands[..],
+        [
+            Ok(concrete::Command::Echo { .. }),
+            Err((_, concrete::Error::SyntaxError)),
+            Err((_, concrete::Error::SyntaxError)),
+        ]
+    ));
+    assert_eq!(
+        commands[0].as_ref().unwrap().to_string(),
+        "(echo \"Hello world!\")"
+    );
+}
+
+#[test]
+fn test_command_stream_invalid_token() {
+    let input = b"(echo \"Hello world!\")(exit \000)";
+    let stream = CommandStream::new(&input[..], concrete::SyntaxBuilder);
+    let commands = stream.collect::<Vec<_>>();
+    assert!(matches!(
+        commands[..],
+        [
+            Ok(concrete::Command::Echo { .. }),
+            Err((_, concrete::Error::ParsingError(_))),
+        ]
+    ));
+    assert_eq!(
+        commands[0].as_ref().unwrap().to_string(),
+        "(echo \"Hello world!\")"
+    );
 }

@@ -17,6 +17,7 @@ use crate::{
 /// Helper trait to create variants of an existing Smt2Visitor.
 pub trait Rewriter {
     type V: Smt2Visitor;
+    type Error: std::convert::From<<Self::V as Smt2Visitor>::Error>;
 
     /// Delegate visitor
     fn visitor(&mut self) -> &mut Self::V;
@@ -25,74 +26,86 @@ pub trait Rewriter {
     fn process_constant(
         &mut self,
         value: <Self::V as Smt2Visitor>::Constant,
-    ) -> <Self::V as Smt2Visitor>::Constant {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        Ok(value)
     }
     fn process_symbol(
         &mut self,
         value: <Self::V as Smt2Visitor>::Symbol,
-    ) -> <Self::V as Smt2Visitor>::Symbol {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Symbol, Self::Error> {
+        Ok(value)
     }
     fn process_keyword(
         &mut self,
         value: <Self::V as Smt2Visitor>::Keyword,
-    ) -> <Self::V as Smt2Visitor>::Keyword {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Keyword, Self::Error> {
+        Ok(value)
     }
     fn process_s_expr(
         &mut self,
         value: <Self::V as Smt2Visitor>::SExpr,
-    ) -> <Self::V as Smt2Visitor>::SExpr {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::SExpr, Self::Error> {
+        Ok(value)
     }
     fn process_sort(
         &mut self,
         value: <Self::V as Smt2Visitor>::Sort,
-    ) -> <Self::V as Smt2Visitor>::Sort {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Sort, Self::Error> {
+        Ok(value)
     }
     fn process_qual_identifier(
         &mut self,
         value: <Self::V as Smt2Visitor>::QualIdentifier,
-    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::QualIdentifier, Self::Error> {
+        Ok(value)
     }
     fn process_term(
         &mut self,
         value: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        Ok(value)
     }
     fn process_command(
         &mut self,
         value: <Self::V as Smt2Visitor>::Command,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        value
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        Ok(value)
     }
 
     // ConstantVisitor
-    fn visit_numeral_constant(&mut self, value: Numeral) -> <Self::V as Smt2Visitor>::Constant {
-        let value = self.visitor().visit_numeral_constant(value);
+    fn visit_numeral_constant(
+        &mut self,
+        value: Numeral,
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        let value = self.visitor().visit_numeral_constant(value)?;
         self.process_constant(value)
     }
-    fn visit_decimal_constant(&mut self, value: Decimal) -> <Self::V as Smt2Visitor>::Constant {
-        let value = self.visitor().visit_decimal_constant(value);
+    fn visit_decimal_constant(
+        &mut self,
+        value: Decimal,
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        let value = self.visitor().visit_decimal_constant(value)?;
         self.process_constant(value)
     }
     fn visit_hexadecimal_constant(
         &mut self,
         value: Hexadecimal,
-    ) -> <Self::V as Smt2Visitor>::Constant {
-        let value = self.visitor().visit_hexadecimal_constant(value);
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        let value = self.visitor().visit_hexadecimal_constant(value)?;
         self.process_constant(value)
     }
-    fn visit_binary_constant(&mut self, value: Binary) -> <Self::V as Smt2Visitor>::Constant {
-        let value = self.visitor().visit_binary_constant(value);
+    fn visit_binary_constant(
+        &mut self,
+        value: Binary,
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        let value = self.visitor().visit_binary_constant(value)?;
         self.process_constant(value)
     }
-    fn visit_string_constant(&mut self, value: String) -> <Self::V as Smt2Visitor>::Constant {
-        let value = self.visitor().visit_string_constant(value);
+    fn visit_string_constant(
+        &mut self,
+        value: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Constant, Self::Error> {
+        let value = self.visitor().visit_string_constant(value)?;
         self.process_constant(value)
     }
 
@@ -100,18 +113,24 @@ pub trait Rewriter {
     fn visit_bound_symbol(
         &mut self,
         value: String,
-    ) -> Result<<Self::V as Smt2Visitor>::Symbol, String> {
-        let value = self.visitor().visit_bound_symbol(value);
-        value.map(|s| self.process_symbol(s))
-    }
-
-    fn visit_fresh_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
-        let value = self.visitor().visit_fresh_symbol(value);
+    ) -> Result<<Self::V as Smt2Visitor>::Symbol, Self::Error> {
+        let value = self.visitor().visit_bound_symbol(value)?;
         self.process_symbol(value)
     }
 
-    fn visit_any_symbol(&mut self, value: String) -> <Self::V as Smt2Visitor>::Symbol {
-        let value = self.visitor().visit_any_symbol(value);
+    fn visit_fresh_symbol(
+        &mut self,
+        value: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Symbol, Self::Error> {
+        let value = self.visitor().visit_fresh_symbol(value)?;
+        self.process_symbol(value)
+    }
+
+    fn visit_any_symbol(
+        &mut self,
+        value: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Symbol, Self::Error> {
+        let value = self.visitor().visit_any_symbol(value)?;
         self.process_symbol(value)
     }
 
@@ -124,8 +143,11 @@ pub trait Rewriter {
     }
 
     // KeywordVisitor
-    fn visit_keyword(&mut self, value: String) -> <Self::V as Smt2Visitor>::Keyword {
-        let value = self.visitor().visit_keyword(value);
+    fn visit_keyword(
+        &mut self,
+        value: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Keyword, Self::Error> {
+        let value = self.visitor().visit_keyword(value)?;
         self.process_keyword(value)
     }
 
@@ -133,29 +155,29 @@ pub trait Rewriter {
     fn visit_constant_s_expr(
         &mut self,
         value: <Self::V as Smt2Visitor>::Constant,
-    ) -> <Self::V as Smt2Visitor>::SExpr {
-        let value = self.visitor().visit_constant_s_expr(value);
+    ) -> Result<<Self::V as Smt2Visitor>::SExpr, Self::Error> {
+        let value = self.visitor().visit_constant_s_expr(value)?;
         self.process_s_expr(value)
     }
     fn visit_symbol_s_expr(
         &mut self,
         value: <Self::V as Smt2Visitor>::Symbol,
-    ) -> <Self::V as Smt2Visitor>::SExpr {
-        let value = self.visitor().visit_symbol_s_expr(value);
+    ) -> Result<<Self::V as Smt2Visitor>::SExpr, Self::Error> {
+        let value = self.visitor().visit_symbol_s_expr(value)?;
         self.process_s_expr(value)
     }
     fn visit_keyword_s_expr(
         &mut self,
         value: <Self::V as Smt2Visitor>::Keyword,
-    ) -> <Self::V as Smt2Visitor>::SExpr {
-        let value = self.visitor().visit_keyword_s_expr(value);
+    ) -> Result<<Self::V as Smt2Visitor>::SExpr, Self::Error> {
+        let value = self.visitor().visit_keyword_s_expr(value)?;
         self.process_s_expr(value)
     }
     fn visit_application_s_expr(
         &mut self,
         values: Vec<<Self::V as Smt2Visitor>::SExpr>,
-    ) -> <Self::V as Smt2Visitor>::SExpr {
-        let value = self.visitor().visit_application_s_expr(values);
+    ) -> Result<<Self::V as Smt2Visitor>::SExpr, Self::Error> {
+        let value = self.visitor().visit_application_s_expr(values)?;
         self.process_s_expr(value)
     }
 
@@ -163,18 +185,18 @@ pub trait Rewriter {
     fn visit_simple_sort(
         &mut self,
         identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
-    ) -> <Self::V as Smt2Visitor>::Sort {
-        let value = self.visitor().visit_simple_sort(identifier);
+    ) -> Result<<Self::V as Smt2Visitor>::Sort, Self::Error> {
+        let value = self.visitor().visit_simple_sort(identifier)?;
         self.process_sort(value)
     }
     fn visit_parameterized_sort(
         &mut self,
         identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
         parameters: Vec<<Self::V as Smt2Visitor>::Sort>,
-    ) -> <Self::V as Smt2Visitor>::Sort {
+    ) -> Result<<Self::V as Smt2Visitor>::Sort, Self::Error> {
         let value = self
             .visitor()
-            .visit_parameterized_sort(identifier, parameters);
+            .visit_parameterized_sort(identifier, parameters)?;
         self.process_sort(value)
     }
 
@@ -182,16 +204,16 @@ pub trait Rewriter {
     fn visit_simple_identifier(
         &mut self,
         identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
-    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
-        let value = self.visitor().visit_simple_identifier(identifier);
+    ) -> Result<<Self::V as Smt2Visitor>::QualIdentifier, Self::Error> {
+        let value = self.visitor().visit_simple_identifier(identifier)?;
         self.process_qual_identifier(value)
     }
     fn visit_sorted_identifier(
         &mut self,
         identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
         sort: <Self::V as Smt2Visitor>::Sort,
-    ) -> <Self::V as Smt2Visitor>::QualIdentifier {
-        let value = self.visitor().visit_sorted_identifier(identifier, sort);
+    ) -> Result<<Self::V as Smt2Visitor>::QualIdentifier, Self::Error> {
+        let value = self.visitor().visit_sorted_identifier(identifier, sort)?;
         self.process_qual_identifier(value)
     }
 
@@ -199,23 +221,25 @@ pub trait Rewriter {
     fn visit_constant(
         &mut self,
         constant: <Self::V as Smt2Visitor>::Constant,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_constant(constant);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_constant(constant)?;
         self.process_term(value)
     }
     fn visit_qual_identifier(
         &mut self,
         qual_identifier: <Self::V as Smt2Visitor>::QualIdentifier,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_qual_identifier(qual_identifier);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_qual_identifier(qual_identifier)?;
         self.process_term(value)
     }
     fn visit_application(
         &mut self,
         qual_identifier: <Self::V as Smt2Visitor>::QualIdentifier,
         arguments: Vec<<Self::V as Smt2Visitor>::Term>,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_application(qual_identifier, arguments);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self
+            .visitor()
+            .visit_application(qual_identifier, arguments)?;
         self.process_term(value)
     }
     fn visit_let(
@@ -225,8 +249,8 @@ pub trait Rewriter {
             <Self::V as Smt2Visitor>::Term,
         )>,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_let(var_bindings, term);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_let(var_bindings, term)?;
         self.process_term(value)
     }
     fn visit_forall(
@@ -236,8 +260,8 @@ pub trait Rewriter {
             <Self::V as Smt2Visitor>::Sort,
         )>,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_forall(vars, term);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_forall(vars, term)?;
         self.process_term(value)
     }
     fn visit_exists(
@@ -247,8 +271,8 @@ pub trait Rewriter {
             <Self::V as Smt2Visitor>::Sort,
         )>,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_exists(vars, term);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_exists(vars, term)?;
         self.process_term(value)
     }
     fn visit_match(
@@ -258,8 +282,8 @@ pub trait Rewriter {
             Vec<<Self::V as Smt2Visitor>::Symbol>,
             <Self::V as Smt2Visitor>::Term,
         )>,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_match(term, cases);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_match(term, cases)?;
         self.process_term(value)
     }
     fn visit_attributes(
@@ -273,8 +297,8 @@ pub trait Rewriter {
                 <Self::V as Smt2Visitor>::SExpr,
             >,
         )>,
-    ) -> <Self::V as Smt2Visitor>::Term {
-        let value = self.visitor().visit_attributes(term, attributes);
+    ) -> Result<<Self::V as Smt2Visitor>::Term, Self::Error> {
+        let value = self.visitor().visit_attributes(term, attributes)?;
         self.process_term(value)
     }
 
@@ -282,35 +306,35 @@ pub trait Rewriter {
     fn visit_assert(
         &mut self,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_assert(term);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_assert(term)?;
         self.process_command(value)
     }
-    fn visit_check_sat(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_check_sat();
+    fn visit_check_sat(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_check_sat()?;
         self.process_command(value)
     }
     fn visit_check_sat_assuming(
         &mut self,
         literals: Vec<(<Self::V as Smt2Visitor>::Symbol, bool)>,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_check_sat_assuming(literals);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_check_sat_assuming(literals)?;
         self.process_command(value)
     }
     fn visit_declare_const(
         &mut self,
         symbol: <Self::V as Smt2Visitor>::Symbol,
         sort: <Self::V as Smt2Visitor>::Sort,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_declare_const(symbol, sort);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_declare_const(symbol, sort)?;
         self.process_command(value)
     }
     fn visit_declare_datatype(
         &mut self,
         symbol: <Self::V as Smt2Visitor>::Symbol,
         datatype: DatatypeDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_declare_datatype(symbol, datatype);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_declare_datatype(symbol, datatype)?;
         self.process_command(value)
     }
     fn visit_declare_datatypes(
@@ -320,8 +344,8 @@ pub trait Rewriter {
             Numeral,
             DatatypeDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
         )>,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_declare_datatypes(datatypes);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_declare_datatypes(datatypes)?;
         self.process_command(value)
     }
     fn visit_declare_fun(
@@ -329,32 +353,32 @@ pub trait Rewriter {
         symbol: <Self::V as Smt2Visitor>::Symbol,
         parameters: Vec<<Self::V as Smt2Visitor>::Sort>,
         sort: <Self::V as Smt2Visitor>::Sort,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_declare_fun(symbol, parameters, sort);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_declare_fun(symbol, parameters, sort)?;
         self.process_command(value)
     }
     fn visit_declare_sort(
         &mut self,
         symbol: <Self::V as Smt2Visitor>::Symbol,
         arity: Numeral,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_declare_sort(symbol, arity);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_declare_sort(symbol, arity)?;
         self.process_command(value)
     }
     fn visit_define_fun(
         &mut self,
         sig: FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_define_fun(sig, term);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_define_fun(sig, term)?;
         self.process_command(value)
     }
     fn visit_define_fun_rec(
         &mut self,
         sig: FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
         term: <Self::V as Smt2Visitor>::Term,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_define_fun_rec(sig, term);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_define_fun_rec(sig, term)?;
         self.process_command(value)
     }
     fn visit_define_funs_rec(
@@ -363,8 +387,8 @@ pub trait Rewriter {
             FunctionDec<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::Sort>,
             <Self::V as Smt2Visitor>::Term,
         )>,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_define_funs_rec(funs);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_define_funs_rec(funs)?;
         self.process_command(value)
     }
     fn visit_define_sort(
@@ -372,77 +396,88 @@ pub trait Rewriter {
         symbol: <Self::V as Smt2Visitor>::Symbol,
         parameters: Vec<<Self::V as Smt2Visitor>::Symbol>,
         sort: <Self::V as Smt2Visitor>::Sort,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_define_sort(symbol, parameters, sort);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_define_sort(symbol, parameters, sort)?;
         self.process_command(value)
     }
-    fn visit_echo(&mut self, message: String) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_echo(message);
+    fn visit_echo(
+        &mut self,
+        message: String,
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_echo(message)?;
         self.process_command(value)
     }
-    fn visit_exit(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_exit();
+    fn visit_exit(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_exit()?;
         self.process_command(value)
     }
-    fn visit_get_assertions(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_assertions();
+    fn visit_get_assertions(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_assertions()?;
         self.process_command(value)
     }
-    fn visit_get_assignment(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_assignment();
+    fn visit_get_assignment(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_assignment()?;
         self.process_command(value)
     }
     fn visit_get_info(
         &mut self,
         flag: <Self::V as Smt2Visitor>::Keyword,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_info(flag);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_info(flag)?;
         self.process_command(value)
     }
-    fn visit_get_model(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_model();
+    fn visit_get_model(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_model()?;
         self.process_command(value)
     }
     fn visit_get_option(
         &mut self,
         keyword: <Self::V as Smt2Visitor>::Keyword,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_option(keyword);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_option(keyword)?;
         self.process_command(value)
     }
-    fn visit_get_proof(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_proof();
+    fn visit_get_proof(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_proof()?;
         self.process_command(value)
     }
-    fn visit_get_unsat_assumptions(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_unsat_assumptions();
+    fn visit_get_unsat_assumptions(
+        &mut self,
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_unsat_assumptions()?;
         self.process_command(value)
     }
-    fn visit_get_unsat_core(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_unsat_core();
+    fn visit_get_unsat_core(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_unsat_core()?;
         self.process_command(value)
     }
     fn visit_get_value(
         &mut self,
         terms: Vec<<Self::V as Smt2Visitor>::Term>,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_get_value(terms);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_get_value(terms)?;
         self.process_command(value)
     }
-    fn visit_pop(&mut self, level: Numeral) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_pop(level);
+    fn visit_pop(
+        &mut self,
+        level: Numeral,
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_pop(level)?;
         self.process_command(value)
     }
-    fn visit_push(&mut self, level: Numeral) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_push(level);
+    fn visit_push(
+        &mut self,
+        level: Numeral,
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_push(level)?;
         self.process_command(value)
     }
-    fn visit_reset(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_reset();
+    fn visit_reset(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_reset()?;
         self.process_command(value)
     }
-    fn visit_reset_assertions(&mut self) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_reset_assertions();
+    fn visit_reset_assertions(&mut self) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_reset_assertions()?;
         self.process_command(value)
     }
     fn visit_set_info(
@@ -453,15 +488,15 @@ pub trait Rewriter {
             <Self::V as Smt2Visitor>::Symbol,
             <Self::V as Smt2Visitor>::SExpr,
         >,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_set_info(keyword, value);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_set_info(keyword, value)?;
         self.process_command(value)
     }
     fn visit_set_logic(
         &mut self,
         symbol: <Self::V as Smt2Visitor>::Symbol,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_set_logic(symbol);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_set_logic(symbol)?;
         self.process_command(value)
     }
     fn visit_set_option(
@@ -472,8 +507,8 @@ pub trait Rewriter {
             <Self::V as Smt2Visitor>::Symbol,
             <Self::V as Smt2Visitor>::SExpr,
         >,
-    ) -> <Self::V as Smt2Visitor>::Command {
-        let value = self.visitor().visit_set_option(keyword, value);
+    ) -> Result<<Self::V as Smt2Visitor>::Command, Self::Error> {
+        let value = self.visitor().visit_set_option(keyword, value)?;
         self.process_command(value)
     }
 }
@@ -484,20 +519,21 @@ where
     V: Smt2Visitor,
 {
     type T = V::Constant;
+    type E = R::Error;
 
-    fn visit_numeral_constant(&mut self, value: Numeral) -> Self::T {
+    fn visit_numeral_constant(&mut self, value: Numeral) -> Result<Self::T, Self::E> {
         self.visit_numeral_constant(value)
     }
-    fn visit_decimal_constant(&mut self, value: Decimal) -> Self::T {
+    fn visit_decimal_constant(&mut self, value: Decimal) -> Result<Self::T, Self::E> {
         self.visit_decimal_constant(value)
     }
-    fn visit_hexadecimal_constant(&mut self, value: Hexadecimal) -> Self::T {
+    fn visit_hexadecimal_constant(&mut self, value: Hexadecimal) -> Result<Self::T, Self::E> {
         self.visit_hexadecimal_constant(value)
     }
-    fn visit_binary_constant(&mut self, value: Binary) -> Self::T {
+    fn visit_binary_constant(&mut self, value: Binary) -> Result<Self::T, Self::E> {
         self.visit_binary_constant(value)
     }
-    fn visit_string_constant(&mut self, value: String) -> Self::T {
+    fn visit_string_constant(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_string_constant(value)
     }
 }
@@ -508,16 +544,17 @@ where
     V: Smt2Visitor,
 {
     type T = V::Symbol;
+    type E = R::Error;
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Self::T {
+    fn visit_fresh_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_fresh_symbol(value)
     }
 
-    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, String> {
+    fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_bound_symbol(value)
     }
 
-    fn visit_any_symbol(&mut self, value: String) -> Self::T {
+    fn visit_any_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_any_symbol(value)
     }
 
@@ -536,8 +573,9 @@ where
     V: Smt2Visitor,
 {
     type T = V::Keyword;
+    type E = R::Error;
 
-    fn visit_keyword(&mut self, value: String) -> Self::T {
+    fn visit_keyword(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_keyword(value)
     }
 }
@@ -548,20 +586,21 @@ where
     V: Smt2Visitor,
 {
     type T = V::SExpr;
+    type E = R::Error;
 
-    fn visit_constant_s_expr(&mut self, value: V::Constant) -> Self::T {
+    fn visit_constant_s_expr(&mut self, value: V::Constant) -> Result<Self::T, Self::E> {
         self.visit_constant_s_expr(value)
     }
 
-    fn visit_symbol_s_expr(&mut self, value: V::Symbol) -> Self::T {
+    fn visit_symbol_s_expr(&mut self, value: V::Symbol) -> Result<Self::T, Self::E> {
         self.visit_symbol_s_expr(value)
     }
 
-    fn visit_keyword_s_expr(&mut self, value: V::Keyword) -> Self::T {
+    fn visit_keyword_s_expr(&mut self, value: V::Keyword) -> Result<Self::T, Self::E> {
         self.visit_keyword_s_expr(value)
     }
 
-    fn visit_application_s_expr(&mut self, values: Vec<Self::T>) -> Self::T {
+    fn visit_application_s_expr(&mut self, values: Vec<Self::T>) -> Result<Self::T, Self::E> {
         self.visit_application_s_expr(values)
     }
 }
@@ -572,8 +611,9 @@ where
     V: Smt2Visitor,
 {
     type T = V::Sort;
+    type E = R::Error;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier<V::Symbol>) -> Self::T {
+    fn visit_simple_sort(&mut self, identifier: Identifier<V::Symbol>) -> Result<Self::T, Self::E> {
         self.visit_simple_sort(identifier)
     }
 
@@ -581,7 +621,7 @@ where
         &mut self,
         identifier: Identifier<V::Symbol>,
         parameters: Vec<Self::T>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_parameterized_sort(identifier, parameters)
     }
 }
@@ -592,8 +632,12 @@ where
     V: Smt2Visitor,
 {
     type T = V::QualIdentifier;
+    type E = R::Error;
 
-    fn visit_simple_identifier(&mut self, identifier: Identifier<V::Symbol>) -> Self::T {
+    fn visit_simple_identifier(
+        &mut self,
+        identifier: Identifier<V::Symbol>,
+    ) -> Result<Self::T, Self::E> {
         self.visit_simple_identifier(identifier)
     }
 
@@ -601,7 +645,7 @@ where
         &mut self,
         identifier: Identifier<V::Symbol>,
         sort: V::Sort,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_sorted_identifier(identifier, sort)
     }
 }
@@ -613,12 +657,16 @@ where
     V: Smt2Visitor,
 {
     type T = V::Term;
+    type E = R::Error;
 
-    fn visit_constant(&mut self, constant: V::Constant) -> Self::T {
+    fn visit_constant(&mut self, constant: V::Constant) -> Result<Self::T, Self::E> {
         self.visit_constant(constant)
     }
 
-    fn visit_qual_identifier(&mut self, qual_identifier: V::QualIdentifier) -> Self::T {
+    fn visit_qual_identifier(
+        &mut self,
+        qual_identifier: V::QualIdentifier,
+    ) -> Result<Self::T, Self::E> {
         self.visit_qual_identifier(qual_identifier)
     }
 
@@ -626,23 +674,39 @@ where
         &mut self,
         qual_identifier: V::QualIdentifier,
         arguments: Vec<Self::T>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_application(qual_identifier, arguments)
     }
 
-    fn visit_let(&mut self, var_bindings: Vec<(V::Symbol, Self::T)>, term: Self::T) -> Self::T {
+    fn visit_let(
+        &mut self,
+        var_bindings: Vec<(V::Symbol, Self::T)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.visit_let(var_bindings, term)
     }
 
-    fn visit_forall(&mut self, vars: Vec<(V::Symbol, V::Sort)>, term: Self::T) -> Self::T {
+    fn visit_forall(
+        &mut self,
+        vars: Vec<(V::Symbol, V::Sort)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.visit_forall(vars, term)
     }
 
-    fn visit_exists(&mut self, vars: Vec<(V::Symbol, V::Sort)>, term: Self::T) -> Self::T {
+    fn visit_exists(
+        &mut self,
+        vars: Vec<(V::Symbol, V::Sort)>,
+        term: Self::T,
+    ) -> Result<Self::T, Self::E> {
         self.visit_exists(vars, term)
     }
 
-    fn visit_match(&mut self, term: Self::T, cases: Vec<(Vec<V::Symbol>, Self::T)>) -> Self::T {
+    fn visit_match(
+        &mut self,
+        term: Self::T,
+        cases: Vec<(Vec<V::Symbol>, Self::T)>,
+    ) -> Result<Self::T, Self::E> {
         self.visit_match(term, cases)
     }
 
@@ -650,7 +714,7 @@ where
         &mut self,
         term: Self::T,
         attributes: Vec<(V::Keyword, AttributeValue<V::Constant, V::Symbol, V::SExpr>)>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_attributes(term, attributes)
     }
 }
@@ -661,20 +725,28 @@ where
     V: Smt2Visitor,
 {
     type T = V::Command;
+    type E = R::Error;
 
-    fn visit_assert(&mut self, term: V::Term) -> Self::T {
+    fn visit_assert(&mut self, term: V::Term) -> Result<Self::T, Self::E> {
         self.visit_assert(term)
     }
 
-    fn visit_check_sat(&mut self) -> Self::T {
+    fn visit_check_sat(&mut self) -> Result<Self::T, Self::E> {
         self.visit_check_sat()
     }
 
-    fn visit_check_sat_assuming(&mut self, literals: Vec<(V::Symbol, bool)>) -> Self::T {
+    fn visit_check_sat_assuming(
+        &mut self,
+        literals: Vec<(V::Symbol, bool)>,
+    ) -> Result<Self::T, Self::E> {
         self.visit_check_sat_assuming(literals)
     }
 
-    fn visit_declare_const(&mut self, symbol: V::Symbol, sort: V::Sort) -> Self::T {
+    fn visit_declare_const(
+        &mut self,
+        symbol: V::Symbol,
+        sort: V::Sort,
+    ) -> Result<Self::T, Self::E> {
         self.visit_declare_const(symbol, sort)
     }
 
@@ -682,14 +754,14 @@ where
         &mut self,
         symbol: V::Symbol,
         datatype: DatatypeDec<V::Symbol, V::Sort>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_declare_datatype(symbol, datatype)
     }
 
     fn visit_declare_datatypes(
         &mut self,
         datatypes: Vec<(V::Symbol, Numeral, DatatypeDec<V::Symbol, V::Sort>)>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_declare_datatypes(datatypes)
     }
 
@@ -698,15 +770,23 @@ where
         symbol: V::Symbol,
         parameters: Vec<V::Sort>,
         sort: V::Sort,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_declare_fun(symbol, parameters, sort)
     }
 
-    fn visit_declare_sort(&mut self, symbol: V::Symbol, arity: Numeral) -> Self::T {
+    fn visit_declare_sort(
+        &mut self,
+        symbol: V::Symbol,
+        arity: Numeral,
+    ) -> Result<Self::T, Self::E> {
         self.visit_declare_sort(symbol, arity)
     }
 
-    fn visit_define_fun(&mut self, sig: FunctionDec<V::Symbol, V::Sort>, term: V::Term) -> Self::T {
+    fn visit_define_fun(
+        &mut self,
+        sig: FunctionDec<V::Symbol, V::Sort>,
+        term: V::Term,
+    ) -> Result<Self::T, Self::E> {
         self.visit_define_fun(sig, term)
     }
 
@@ -714,14 +794,14 @@ where
         &mut self,
         sig: FunctionDec<V::Symbol, V::Sort>,
         term: V::Term,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_define_fun_rec(sig, term)
     }
 
     fn visit_define_funs_rec(
         &mut self,
         funs: Vec<(FunctionDec<V::Symbol, V::Sort>, V::Term)>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_define_funs_rec(funs)
     }
 
@@ -730,67 +810,67 @@ where
         symbol: V::Symbol,
         parameters: Vec<V::Symbol>,
         sort: V::Sort,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_define_sort(symbol, parameters, sort)
     }
 
-    fn visit_echo(&mut self, message: String) -> Self::T {
+    fn visit_echo(&mut self, message: String) -> Result<Self::T, Self::E> {
         self.visit_echo(message)
     }
 
-    fn visit_exit(&mut self) -> Self::T {
+    fn visit_exit(&mut self) -> Result<Self::T, Self::E> {
         self.visit_exit()
     }
 
-    fn visit_get_assertions(&mut self) -> Self::T {
+    fn visit_get_assertions(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_assertions()
     }
 
-    fn visit_get_assignment(&mut self) -> Self::T {
+    fn visit_get_assignment(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_assignment()
     }
 
-    fn visit_get_info(&mut self, flag: V::Keyword) -> Self::T {
+    fn visit_get_info(&mut self, flag: V::Keyword) -> Result<Self::T, Self::E> {
         self.visit_get_info(flag)
     }
 
-    fn visit_get_model(&mut self) -> Self::T {
+    fn visit_get_model(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_model()
     }
 
-    fn visit_get_option(&mut self, keyword: V::Keyword) -> Self::T {
+    fn visit_get_option(&mut self, keyword: V::Keyword) -> Result<Self::T, Self::E> {
         self.visit_get_option(keyword)
     }
 
-    fn visit_get_proof(&mut self) -> Self::T {
+    fn visit_get_proof(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_proof()
     }
 
-    fn visit_get_unsat_assumptions(&mut self) -> Self::T {
+    fn visit_get_unsat_assumptions(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_unsat_assumptions()
     }
 
-    fn visit_get_unsat_core(&mut self) -> Self::T {
+    fn visit_get_unsat_core(&mut self) -> Result<Self::T, Self::E> {
         self.visit_get_unsat_core()
     }
 
-    fn visit_get_value(&mut self, terms: Vec<V::Term>) -> Self::T {
+    fn visit_get_value(&mut self, terms: Vec<V::Term>) -> Result<Self::T, Self::E> {
         self.visit_get_value(terms)
     }
 
-    fn visit_pop(&mut self, level: Numeral) -> Self::T {
+    fn visit_pop(&mut self, level: Numeral) -> Result<Self::T, Self::E> {
         self.visit_pop(level)
     }
 
-    fn visit_push(&mut self, level: Numeral) -> Self::T {
+    fn visit_push(&mut self, level: Numeral) -> Result<Self::T, Self::E> {
         self.visit_push(level)
     }
 
-    fn visit_reset(&mut self) -> Self::T {
+    fn visit_reset(&mut self) -> Result<Self::T, Self::E> {
         self.visit_reset()
     }
 
-    fn visit_reset_assertions(&mut self) -> Self::T {
+    fn visit_reset_assertions(&mut self) -> Result<Self::T, Self::E> {
         self.visit_reset_assertions()
     }
 
@@ -798,11 +878,11 @@ where
         &mut self,
         keyword: V::Keyword,
         value: AttributeValue<V::Constant, V::Symbol, V::SExpr>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_set_info(keyword, value)
     }
 
-    fn visit_set_logic(&mut self, symbol: V::Symbol) -> Self::T {
+    fn visit_set_logic(&mut self, symbol: V::Symbol) -> Result<Self::T, Self::E> {
         self.visit_set_logic(symbol)
     }
 
@@ -810,7 +890,7 @@ where
         &mut self,
         keyword: V::Keyword,
         value: AttributeValue<V::Constant, V::Symbol, V::SExpr>,
-    ) -> Self::T {
+    ) -> Result<Self::T, Self::E> {
         self.visit_set_option(keyword, value)
     }
 }
@@ -820,6 +900,7 @@ where
     R: Rewriter<V = V>,
     V: Smt2Visitor,
 {
+    type Error = R::Error;
     type Constant = V::Constant;
     type QualIdentifier = V::QualIdentifier;
     type Keyword = V::Keyword;
@@ -828,6 +909,14 @@ where
     type Symbol = V::Symbol;
     type Term = V::Term;
     type Command = V::Command;
+
+    fn syntax_error(&mut self) -> Self::Error {
+        self.visitor().syntax_error().into()
+    }
+
+    fn parsing_error(&mut self, s: String) -> Self::Error {
+        self.visitor().parsing_error(s).into()
+    }
 }
 
 #[test]
@@ -877,19 +966,20 @@ fn test_term_rewriter() {
     struct Builder(crate::concrete::SyntaxBuilder);
     impl Rewriter for Builder {
         type V = crate::concrete::SyntaxBuilder;
+        type Error = crate::concrete::Error;
 
         fn visitor(&mut self) -> &mut Self::V {
             &mut self.0
         }
 
-        fn process_symbol(&mut self, s: Symbol) -> Symbol {
-            Symbol(s.0 + "__")
+        fn process_symbol(&mut self, s: Symbol) -> Result<Symbol, Self::Error> {
+            Ok(Symbol(s.0 + "__"))
         }
     }
 
     let mut builder = Builder::default();
 
-    let command2 = command.clone().accept(&mut builder);
+    let command2 = command.clone().accept(&mut builder).unwrap();
     let command3 = Command::Assert {
         term: Term::Let {
             var_bindings: vec![(
@@ -934,19 +1024,20 @@ fn test_term_rewriter() {
     struct Builder2(crate::concrete::SyntaxBuilder);
     impl Rewriter for Builder2 {
         type V = crate::concrete::SyntaxBuilder;
+        type Error = crate::concrete::Error;
 
         fn visitor(&mut self) -> &mut Self::V {
             &mut self.0
         }
 
-        fn visit_assert(&mut self, _: Term) -> Command {
-            Command::Exit
+        fn visit_assert(&mut self, _: Term) -> Result<Command, Self::Error> {
+            Ok(Command::Exit)
         }
     }
 
     let mut builder = Builder2::default();
 
-    let command2 = command.accept(&mut builder);
+    let command2 = command.accept(&mut builder).unwrap();
     let command3 = Command::Exit;
     assert_eq!(command2, command3);
 }
