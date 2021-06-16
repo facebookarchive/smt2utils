@@ -15,6 +15,7 @@
 //! let stream = CommandStream::new(
 //!     &input[..],
 //!     concrete::SyntaxBuilder,
+//!     Some("optional/path/to/file".to_string()),
 //! );
 //! let commands = stream.collect::<Result<Vec<_>, _>>().unwrap();
 //! assert!(matches!(commands[..], [
@@ -61,6 +62,7 @@ where
 {
     lexer: lexer::Lexer<R>,
     visitor: T,
+    position: Position,
 }
 
 impl<R, T> CommandStream<R, T>
@@ -68,10 +70,14 @@ where
     R: std::io::BufRead,
     T: visitors::Smt2Visitor,
 {
-    pub fn new(reader: R, visitor: T) -> Self {
+    pub fn new(reader: R, visitor: T, path: Option<String>) -> Self {
         Self {
             lexer: lexer::Lexer::new(reader),
             visitor,
+            position: Position {
+                path,
+                ..Position::default()
+            },
         }
     }
 
@@ -93,10 +99,10 @@ where
     R: std::io::BufRead,
     T: visitors::Smt2Visitor,
 {
-    type Item = Result<T::Command, (Position, T::Error)>;
+    type Item = Result<T::Command, T::Error>;
 
-    fn next(&mut self) -> Option<Result<T::Command, (Position, T::Error)>> {
-        let mut parser = parser::Parser::new(&mut self.visitor);
+    fn next(&mut self) -> Option<Result<T::Command, T::Error>> {
+        let mut parser = parser::Parser::new((&mut self.visitor, &mut self.position));
         let mut unmatched_paren = 0;
         while let Some(token) = self.lexer.next() {
             match &token {
@@ -108,23 +114,23 @@ where
                 }
                 _ => (),
             }
+            self.lexer.update_position(parser.extra_mut().1);
             if let Err(err) = parser.parse(token) {
-                return Some(Err((self.lexer.current_position(), err)));
+                return Some(Err(err));
             }
             if unmatched_paren == 0 {
                 return match parser.end_of_input() {
                     Ok((command, _)) => Some(Ok(command)),
-                    Err(err) => Some(Err((self.lexer.current_position(), err))),
+                    Err(err) => Some(Err(err)),
                 };
             }
         }
         if unmatched_paren > 0 {
             // We ran out of valid tokens in the middle of a command.
-            Some(Err((
-                self.lexer.current_position(),
-                parser
-                    .into_extra()
-                    .parsing_error("unexpected end of input".into()),
+            let extra = parser.into_extra();
+            Some(Err(extra.0.parsing_error(
+                extra.1.clone(),
+                "unexpected end of input".into(),
             )))
         } else {
             // There are no more valid tokens to parse.
@@ -137,14 +143,15 @@ where
 #[test]
 fn test_command_stream_error() {
     let input = b"(echo \"Hello world!\")(exit f)";
-    let stream = CommandStream::new(&input[..], concrete::SyntaxBuilder);
+    let builder = concrete::SyntaxBuilder::default();
+    let stream = CommandStream::new(&input[..], builder, None);
     let commands = stream.collect::<Vec<_>>();
     assert!(matches!(
         commands[..],
         [
             Ok(concrete::Command::Echo { .. }),
-            Err((_, concrete::Error::SyntaxError)),
-            Err((_, concrete::Error::SyntaxError)),
+            Err(concrete::Error::SyntaxError(..)),
+            Err(concrete::Error::SyntaxError(..)),
         ]
     ));
     assert_eq!(
@@ -156,13 +163,14 @@ fn test_command_stream_error() {
 #[test]
 fn test_command_stream_invalid_token() {
     let input = b"(echo \"Hello world!\")(exit \000)";
-    let stream = CommandStream::new(&input[..], concrete::SyntaxBuilder);
+    let builder = concrete::SyntaxBuilder::default();
+    let stream = CommandStream::new(&input[..], builder, None);
     let commands = stream.collect::<Vec<_>>();
     assert!(matches!(
         commands[..],
         [
             Ok(concrete::Command::Echo { .. }),
-            Err((_, concrete::Error::ParsingError(_))),
+            Err(concrete::Error::ParsingError(..)),
         ]
     ));
     assert_eq!(

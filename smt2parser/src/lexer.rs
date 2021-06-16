@@ -7,24 +7,25 @@ use crate::{parser::Token, Decimal, Numeral};
 use num::Num;
 
 /// Record a position in the input stream.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Position {
-    line: usize,
-    column: usize,
+    pub path: Option<String>,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Position {
-    pub fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
+    pub fn new(path: Option<String>, line: usize, column: usize) -> Self {
+        Self { path, line, column }
     }
+}
 
-    pub fn location_in_file(&self, path: &std::path::Path) -> String {
-        format!(
-            "{}:{}:{}",
-            path.to_string_lossy(),
-            self.line + 1,
-            self.column + 1
-        )
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.path {
+            Some(path) => write!(f, "{}:{}:{}", path, self.line, self.column),
+            None => write!(f, "{}:{}", self.line, self.column),
+        }
     }
 }
 
@@ -126,11 +127,20 @@ where
         self.current_offset
     }
 
-    pub(crate) fn current_position(&self) -> Position {
-        Position {
-            line: self.current_line,
-            column: self.current_column,
-        }
+    #[cfg(test)]
+    pub(crate) fn current_column(&self) -> usize {
+        self.current_column
+    }
+
+    #[cfg(test)]
+    pub(crate) fn current_line(&self) -> usize {
+        self.current_line
+    }
+
+    #[inline]
+    pub(crate) fn update_position(&self, pos: &mut Position) {
+        pos.line = self.current_line + 1;
+        pos.column = self.current_column + 1;
     }
 
     fn consume_byte(&mut self) {
@@ -409,7 +419,8 @@ fn test_spaces() {
         tokens,
         vec![Token::Symbol("xx".into()), Token::Symbol("asd".into())]
     );
-    assert_eq!(lexer.current_position(), Position::new(1, 5));
+    assert_eq!(lexer.current_line(), 1);
+    assert_eq!(lexer.current_column(), 5);
     assert_eq!(lexer.current_offset(), input.len());
 }
 
@@ -421,7 +432,8 @@ fn test_error() {
         (&mut lexer).collect::<Vec<_>>(),
         vec![Token::Symbol("xx".into())]
     );
-    assert_eq!(lexer.current_position(), Position::new(0, input.len() - 1));
+    assert_eq!(lexer.current_line(), 0);
+    assert_eq!(lexer.current_column(), input.len() - 1);
     assert_eq!(lexer.current_offset(), input.len() - 1);
 }
 

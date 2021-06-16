@@ -11,7 +11,7 @@ use crate::{
         KeywordVisitor, QualIdentifierVisitor, SExprVisitor, Smt2Visitor, SortVisitor,
         SymbolVisitor, TermVisitor,
     },
-    Binary, Decimal, Hexadecimal, Numeral,
+    Binary, Decimal, Hexadecimal, Numeral, Position,
 };
 
 /// Helper trait to create variants of an existing Smt2Visitor.
@@ -910,12 +910,12 @@ where
     type Term = V::Term;
     type Command = V::Command;
 
-    fn syntax_error(&mut self) -> Self::Error {
-        self.visitor().syntax_error().into()
+    fn syntax_error(&mut self, pos: Position, s: String) -> Self::Error {
+        self.visitor().syntax_error(pos, s).into()
     }
 
-    fn parsing_error(&mut self, s: String) -> Self::Error {
-        self.visitor().parsing_error(s).into()
+    fn parsing_error(&mut self, pos: Position, s: String) -> Self::Error {
+        self.visitor().parsing_error(pos, s).into()
     }
 }
 

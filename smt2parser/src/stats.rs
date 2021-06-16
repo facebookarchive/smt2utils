@@ -4,11 +4,12 @@
 //! A demo implementation of visiting traits that counts things.
 
 use crate::{
+    concrete::Error,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
         Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
     },
-    Binary, Decimal, Hexadecimal, Numeral,
+    Binary, Decimal, Hexadecimal, Numeral, Position,
 };
 
 use serde::{Deserialize, Serialize};
@@ -136,7 +137,7 @@ impl Term {
 
 impl ConstantVisitor for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_numeral_constant(&mut self, _value: Numeral) -> Result<Self::T, Self::E> {
         self.numeral_constant_count += 1;
@@ -162,7 +163,7 @@ impl ConstantVisitor for Smt2Counters {
 
 impl SymbolVisitor for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_fresh_symbol(&mut self, _value: String) -> Result<Self::T, Self::E> {
         self.fresh_symbol_count += 1;
@@ -183,7 +184,7 @@ impl SymbolVisitor for Smt2Counters {
 
 impl KeywordVisitor for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_keyword(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.keyword_count += 1;
@@ -206,7 +207,7 @@ type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
 
 impl SExprVisitor<Constant, Symbol, Keyword> for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_constant_s_expr(&mut self, _value: Constant) -> Result<Self::T, Self::E> {
         self.constant_s_expr_count += 1;
@@ -231,7 +232,7 @@ impl SExprVisitor<Constant, Symbol, Keyword> for Smt2Counters {
 
 impl SortVisitor<Symbol> for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_simple_sort(&mut self, _identifier: Identifier) -> Result<Self::T, Self::E> {
         self.simple_sort_count += 1;
@@ -250,7 +251,7 @@ impl SortVisitor<Symbol> for Smt2Counters {
 
 impl QualIdentifierVisitor<Identifier, Sort> for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_simple_identifier(&mut self, _identifier: Identifier) -> Result<Self::T, Self::E> {
         self.simple_identifier_count += 1;
@@ -269,7 +270,7 @@ impl QualIdentifierVisitor<Identifier, Sort> for Smt2Counters {
 
 impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for Smt2Counters {
     type T = Term;
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_constant(&mut self, _constant: Constant) -> Result<Self::T, Self::E> {
         self.constant_count += 1;
@@ -355,7 +356,7 @@ impl Smt2Counters {
 
 impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counters {
     type T = ();
-    type E = crate::concrete::Error;
+    type E = Error;
 
     fn visit_assert(&mut self, term: Term) -> Result<Self::T, Self::E> {
         self.assert_count += 1;
@@ -549,7 +550,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counte
 }
 
 impl Smt2Visitor for Smt2Counters {
-    type Error = crate::concrete::Error;
+    type Error = Error;
     type Constant = ();
     type QualIdentifier = ();
     type Keyword = ();
@@ -559,11 +560,11 @@ impl Smt2Visitor for Smt2Counters {
     type Term = Term;
     type Command = ();
 
-    fn syntax_error(&mut self) -> Self::Error {
-        crate::concrete::Error::SyntaxError
+    fn syntax_error(&mut self, position: Position, s: String) -> Self::Error {
+        Error::SyntaxError(position, s)
     }
 
-    fn parsing_error(&mut self, s: String) -> Self::Error {
-        crate::concrete::Error::ParsingError(s)
+    fn parsing_error(&mut self, position: Position, s: String) -> Self::Error {
+        Error::ParsingError(position, s)
     }
 }

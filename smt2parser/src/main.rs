@@ -47,16 +47,12 @@ where
     T::Error: std::fmt::Display,
 {
     let file = std::io::BufReader::new(std::fs::File::open(&file_path)?);
-    let mut stream = CommandStream::new(file, state);
+    let mut stream = CommandStream::new(file, state, file_path.to_str().map(String::from));
     for result in &mut stream {
         match result {
             Ok(command) => f(command),
-            Err((position, error)) => {
-                eprintln!(
-                    "error: {}:\n --> {}",
-                    error,
-                    position.location_in_file(&file_path)
-                );
+            Err(error) => {
+                eprintln!("{}", error);
                 break;
             }
         }

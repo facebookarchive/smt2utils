@@ -150,7 +150,7 @@ where
 
 #[test]
 fn test_testers() {
-    use crate::{lexer::Lexer, parser::tests::parse_tokens};
+    use crate::{concrete, lexer::Lexer, parser::tests::parse_tokens};
 
     let value = parse_tokens(Lexer::new(&b"(assert (is-Foo 3))"[..])).unwrap();
     assert!(matches!(
@@ -164,13 +164,8 @@ fn test_testers() {
             }
         }
     ));
-    assert_eq!(
-        value,
-        value
-            .clone()
-            .accept(&mut crate::concrete::SyntaxBuilder)
-            .unwrap()
-    );
+    let mut builder = concrete::SyntaxBuilder::default();
+    assert_eq!(value, value.clone().accept(&mut builder).unwrap());
     // Visit with the TesterModernizer this time.
     let mut builder = TesterModernizer::<SyntaxBuilder>::default();
     assert!(matches!(
@@ -212,14 +207,8 @@ fn test_declare_datatypes_renaming() {
     ))
     .unwrap();
     assert!(matches!(value2, Command::DeclareDatatypes { .. }));
-
-    assert_eq!(
-        value,
-        value
-            .clone()
-            .accept(&mut crate::concrete::SyntaxBuilder)
-            .unwrap()
-    );
+    let mut builder = SyntaxBuilder::default();
+    assert_eq!(value, value.clone().accept(&mut builder).unwrap());
 
     let mut builder = SymbolNormalizer::<SyntaxBuilder>::default();
     assert_eq!(value2, value.clone().accept(&mut builder).unwrap());

@@ -283,7 +283,8 @@ impl Patcher {
             discarded_options.insert(PRODUCE_UNSAT_CORES.to_string());
         }
         let rewriter = Rewriter::new(self.config.rewriter_config.clone(), discarded_options);
-        let mut stream = smt2parser::CommandStream::new(file, rewriter);
+        let mut stream =
+            smt2parser::CommandStream::new(file, rewriter, path.to_str().map(String::from));
         for result in &mut stream {
             match result {
                 Ok(command)
@@ -296,9 +297,9 @@ impl Patcher {
                 Ok(command) => {
                     self.script.push(command);
                 }
-                Err((_, Error::SkipCommand)) => {}
-                Err((position, error)) => {
-                    panic!("error: {}\n --> {}", error, position.location_in_file(path));
+                Err(Error::SkipCommand) => {}
+                Err(error) => {
+                    panic!("{}", error);
                 }
             }
         }

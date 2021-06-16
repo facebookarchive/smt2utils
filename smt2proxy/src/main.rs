@@ -96,7 +96,7 @@ fn make_z3_args(options: &Options) -> Vec<String> {
 #[derive(Debug)]
 enum Event {
     Done,
-    Query(Box<Result<smt2parser::concrete::Command, (smt2parser::Position, smt2parser::Error)>>),
+    Query(Box<Result<smt2parser::concrete::Command, smt2parser::Error>>),
 }
 
 fn spawn_child_stream_logger<R>(
@@ -180,8 +180,7 @@ fn process_events(
                     Err(error) => {
                         if let Some(logger) = processor.logger() {
                             let mut f = logger.lock().unwrap();
-                            writeln!(f, "; Syntax error at {:?}", error)
-                                .expect("Failed to write to log file");
+                            writeln!(f, "; {}", error).expect("Failed to write to log file");
                         }
                         break;
                     }
@@ -237,7 +236,7 @@ fn main() {
     };
 
     // Send the input commands to the command processor.
-    let stream = smt2parser::CommandStream::new(input, smt2parser::concrete::SyntaxBuilder);
+    let stream = smt2parser::CommandStream::new(input, smt2parser::concrete::SyntaxBuilder, None);
     for result in stream {
         sender.send(Event::Query(Box::new(result))).unwrap();
     }
