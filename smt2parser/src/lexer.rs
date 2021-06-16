@@ -63,7 +63,7 @@ const KEYWORDS: &[(&str, Token)] = {
         ("echo", Echo),
         ("exit", Exit),
         ("get-assertions", GetAssertions),
-        ("get-assignments", GetAssignments),
+        ("get-assignment", GetAssignment),
         ("get-info", GetInfo),
         ("get-model", GetModel),
         ("get-option", GetOption),

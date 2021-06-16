@@ -325,7 +325,7 @@ pomelo! {
     //   ( get-assertions )
     command ::= LeftParen GetAssertions RightParen { extra.visit_get_assertions()? }
     //   ( get-assignment )
-    command ::= LeftParen GetAssignments RightParen { extra.visit_get_assignment()? }
+    command ::= LeftParen GetAssignment RightParen { extra.visit_get_assignment()? }
     //   ( get-info ⟨info_flag⟩ )
     command ::= LeftParen GetInfo keyword(x) RightParen { extra.visit_get_info(x)? }
     //   ( get-model )
