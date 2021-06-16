@@ -9,7 +9,7 @@ use crate::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
         Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
     },
-    Binary, Decimal, Hexadecimal, Numeral,
+    Binary, Decimal, Hexadecimal, Numeral, Position,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -194,10 +194,10 @@ pub struct SyntaxBuilder;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("syntax error")]
-    SyntaxError,
-    #[error("parsing error: {0}")]
-    ParsingError(String),
+    #[error("error: {1}\n   --> {0}")]
+    SyntaxError(Position, String),
+    #[error("error: {1}\n   --> {0}")]
+    ParsingError(Position, String),
 }
 
 impl ConstantVisitor for SyntaxBuilder {
@@ -1021,12 +1021,12 @@ impl Smt2Visitor for SyntaxBuilder {
     type Term = Term;
     type Command = Command;
 
-    fn syntax_error(&mut self) -> Self::Error {
-        Error::SyntaxError
+    fn syntax_error(&mut self, position: crate::Position, s: String) -> Self::Error {
+        Error::SyntaxError(position, s)
     }
 
-    fn parsing_error(&mut self, s: String) -> Self::Error {
-        Error::ParsingError(s)
+    fn parsing_error(&mut self, position: crate::Position, s: String) -> Self::Error {
+        Error::ParsingError(position, s)
     }
 }
 
@@ -1374,6 +1374,7 @@ fn test_syntax_visitor() {
             }),
         },
     };
-    let command2 = command.clone().accept(&mut SyntaxBuilder).unwrap();
+    let mut builder = SyntaxBuilder::default();
+    let command2 = command.clone().accept(&mut builder).unwrap();
     assert_eq!(command, command2);
 }

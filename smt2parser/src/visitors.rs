@@ -466,8 +466,8 @@ pub trait Smt2Visitor:
     type Term;
     type Command;
 
-    fn syntax_error(&mut self) -> Self::Error;
-    fn parsing_error(&mut self, s: String) -> Self::Error;
+    fn syntax_error(&mut self, position: crate::Position, s: String) -> Self::Error;
+    fn parsing_error(&mut self, position: crate::Position, s: String) -> Self::Error;
 }
 
 impl<Symbol> std::fmt::Display for Index<Symbol>
