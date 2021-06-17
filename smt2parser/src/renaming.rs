@@ -117,7 +117,7 @@ where
                 self.global_symbols.insert(value.clone());
                 Symbol(value)
             });
-        Ok(self.process_symbol(value)?)
+        self.process_symbol(value)
     }
 
     fn visit_fresh_symbol(&mut self, value: String) -> Result<Symbol, Error> {
@@ -169,7 +169,7 @@ fn test_testers() {
     // Visit with the TesterModernizer this time.
     let mut builder = TesterModernizer::<SyntaxBuilder>::default();
     assert!(matches!(
-        value.clone().accept(&mut builder).unwrap(),
+        value.accept(&mut builder).unwrap(),
         Command::Assert {
             term: Term::Application {
                 qual_identifier: QualIdentifier::Simple {
@@ -211,7 +211,7 @@ fn test_declare_datatypes_renaming() {
     assert_eq!(value, value.clone().accept(&mut builder).unwrap());
 
     let mut builder = SymbolNormalizer::<SyntaxBuilder>::default();
-    assert_eq!(value2, value.clone().accept(&mut builder).unwrap());
+    assert_eq!(value2, value.accept(&mut builder).unwrap());
 }
 
 #[test]
