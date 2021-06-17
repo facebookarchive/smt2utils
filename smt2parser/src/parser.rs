@@ -4,6 +4,7 @@
 #![allow(unused_braces)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::needless_lifetimes)]
 
 pub use internal::{Parser, Token};
 
