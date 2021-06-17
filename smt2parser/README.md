@@ -15,9 +15,10 @@ To obtain concrete syntax values, use `concrete::SyntaxBuilder` as a
 visitor:
 ```rust
 let input = b"(echo \"Hello world!\")(exit)";
-let mut stream = CommandStream::new(
+let stream = CommandStream::new(
     &input[..],
     concrete::SyntaxBuilder,
+    Some("optional/path/to/file".to_string()),
 );
 let commands = stream.collect::<Result<Vec<_>, _>>().unwrap();
 assert!(matches!(commands[..], [
@@ -40,5 +41,5 @@ license](../LICENSE-MIT).
 README.md is generated from README.tpl by cargo readme. To regenerate:
 
 cargo install cargo-readme
-cargo readme | sed -e 's/\`/`/g; s/`\]/`/g;' > README.md
+cargo readme | sed -e 's/\[`/`/g; s/`\]/`/g;' > README.md
 -->
