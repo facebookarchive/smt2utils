@@ -1,6 +1,6 @@
 [package]
 name = "smt2parser"
-version = "0.5.0"
+version = "0.5.1"
 description = "Generic parser library for the SMT-LIB-2 format"
 repository = "https://github.com/facebookincubator/smt2utils"
 documentation = "https://docs.rs/smt2parser"
