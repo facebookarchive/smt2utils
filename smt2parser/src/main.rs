@@ -3,7 +3,12 @@
 
 #![forbid(unsafe_code)]
 
-use smt2parser::{concrete::SyntaxBuilder, stats::Smt2Counters, CommandStream};
+use smt2parser::{
+    concrete::SyntaxBuilder,
+    renaming::{SymbolNormalizer, TesterModernizer},
+    stats::Smt2Counters,
+    CommandStream,
+};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -21,6 +26,10 @@ struct Options {
 #[derive(Debug, StructOpt)]
 enum Operation {
     Print {
+        /// Normalize bound symbols to x0, x1..
+        #[structopt(long)]
+        normalize_symbols: bool,
+
         /// Path to the SMT2 files.
         #[structopt(parse(from_os_str))]
         inputs: Vec<PathBuf>,
@@ -40,10 +49,10 @@ enum Operation {
     },
 }
 
-fn process_file<T, F>(state: T, file_path: PathBuf, f: F) -> std::io::Result<T>
+fn process_file<T, F>(state: T, file_path: PathBuf, mut f: F) -> std::io::Result<T>
 where
     T: smt2parser::visitors::Smt2Visitor,
-    F: Fn(T::Command),
+    F: FnMut(T::Command),
     T::Error: std::fmt::Display,
 {
     let file = std::io::BufReader::new(std::fs::File::open(&file_path)?);
@@ -74,9 +83,24 @@ fn read_words(path: Option<PathBuf>) -> std::io::Result<Vec<String>> {
 fn main() -> std::io::Result<()> {
     let options = Options::from_args();
     match options.operation {
-        Operation::Print { inputs } => {
-            for input in inputs {
-                process_file(SyntaxBuilder, input, |command| println!("{}", command))?;
+        Operation::Print {
+            normalize_symbols,
+            inputs,
+        } => {
+            if normalize_symbols {
+                let mut normalizer = SymbolNormalizer::new(SyntaxBuilder);
+                for input in inputs {
+                    // 1. Parse input commands while rewriting `is-Foo` into `(_ is Foo)` on the fly with TesterModernizer.
+                    process_file(TesterModernizer::new(SyntaxBuilder), input, |command| {
+                        // 2. Re-visit the syntax for name resolution and normalization.
+                        let command = command.accept(&mut normalizer).unwrap();
+                        println!("{}", command);
+                    })?;
+                }
+            } else {
+                for input in inputs {
+                    process_file(SyntaxBuilder, input, |command| println!("{}", command))?;
+                }
             }
         }
         Operation::Count {

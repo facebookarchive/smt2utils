@@ -37,8 +37,8 @@ where
     ) -> Result<QualIdentifier, Error> {
         let value = match value {
             Identifier::Simple { symbol } if symbol.0.starts_with("is-") => {
-                let is = Symbol("is".to_string());
-                let name = Symbol(symbol.0[3..].to_string());
+                let is = self.0.visit_bound_symbol("is".to_string())?;
+                let name = self.0.visit_bound_symbol(symbol.0[3..].to_string())?;
                 Identifier::Indexed {
                     symbol: is,
                     indices: vec![Index::Symbol(name)],
