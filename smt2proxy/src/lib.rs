@@ -29,6 +29,9 @@ pub struct CommandProcessorConfig {
     #[structopt(long, env)]
     smt2proxy_seed: Option<u64>,
 
+    #[structopt(long, env)]
+    pub smt2proxy_normalize_symbols: bool,
+
     #[structopt(long, env, parse(try_from_str = parse_smt2_options), default_value = "")]
     smt2proxy_options: BTreeMap<Keyword, AttributeValue>,
 }
@@ -56,6 +59,8 @@ fn parse_smt2_options(options: &str) -> Result<BTreeMap<Keyword, AttributeValue>
     Ok(map)
 }
 
+type Rewriter = smt2parser::renaming::SymbolNormalizer<smt2parser::concrete::SyntaxBuilder>;
+
 /// An SMT2 command processor.
 #[derive(Debug)]
 pub struct CommandProcessor {
@@ -65,6 +70,7 @@ pub struct CommandProcessor {
     options: BTreeMap<Keyword, AttributeValue>,
     has_sent_initial_commands: bool,
     clauses: Vec<Command>,
+    rewriter: Option<Rewriter>,
 }
 
 impl From<CommandProcessorConfig> for CommandProcessor {
@@ -94,6 +100,11 @@ impl From<CommandProcessorConfig> for CommandProcessor {
                 AttributeValue::Constant(Constant::Numeral(Numeral::from(seed))),
             );
         }
+        let rewriter = if config.smt2proxy_normalize_symbols {
+            Some(Rewriter::default())
+        } else {
+            None
+        };
         Self {
             logger: log.map(|f| Arc::new(Mutex::new(f))),
             delay,
@@ -101,6 +112,7 @@ impl From<CommandProcessorConfig> for CommandProcessor {
             options,
             has_sent_initial_commands: false,
             clauses: Vec::new(),
+            rewriter,
         }
     }
 }
@@ -177,7 +189,11 @@ impl CommandProcessor {
     /// Process a new command and return a sequence of commands ready to be executed, if any.
     pub fn process(&mut self, command: Command) -> Vec<Command> {
         use CommandKind::*;
-
+        let command = if let Some(rewriter) = &mut self.rewriter {
+            command.accept(rewriter).expect("Failed to rewrite command")
+        } else {
+            command
+        };
         let mut commands = self.initial_commands_if_needed();
         let kind = self.analyze_command(&command);
         if self.delay {

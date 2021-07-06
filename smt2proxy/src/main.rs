@@ -205,6 +205,7 @@ fn process_events(
 
 fn main() {
     let options = Options::from_iter(iter_args());
+    let smt2proxy_normalize_symbols = options.smt2proxy_config.smt2proxy_normalize_symbols;
 
     // Spawn the command processor in a separate thread.
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -236,7 +237,16 @@ fn main() {
     };
 
     // Send the input commands to the command processor.
-    let stream = smt2parser::CommandStream::new(input, smt2parser::concrete::SyntaxBuilder, None);
+    let stream: Box<dyn Iterator<Item = std::result::Result<_, _>>> = {
+        if smt2proxy_normalize_symbols {
+            let builder =
+                smt2parser::renaming::TesterModernizer::new(smt2parser::concrete::SyntaxBuilder);
+            Box::new(smt2parser::CommandStream::new(input, builder, None).into_iter())
+        } else {
+            let builder = smt2parser::concrete::SyntaxBuilder;
+            Box::new(smt2parser::CommandStream::new(input, builder, None).into_iter())
+        }
+    };
     for result in stream {
         sender.send(Event::Query(Box::new(result))).unwrap();
     }
