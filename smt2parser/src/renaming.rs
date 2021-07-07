@@ -165,6 +165,15 @@ where
         self.process_command(value)
     }
 
+    fn visit_reset(&mut self) -> Result<Command, Error> {
+        self.local_symbols.clear();
+        self.global_symbols.clear();
+        self.bound_symbols.clear();
+        self.scopes.clear();
+        let value = self.visitor().visit_reset()?;
+        self.process_command(value)
+    }
+
     fn visit_bound_symbol(&mut self, value: String) -> Result<Symbol, Error> {
         let value = self
             .bound_symbols
