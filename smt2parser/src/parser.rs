@@ -39,7 +39,7 @@ pomelo! {
 
     %type constant T::Constant;
     %type qual_identifier T::QualIdentifier;
-    %type identifier visitors::Identifier<T::Symbol>;
+    %type identifier visitors::Identifier<T::Symbol, T::SExpr>;
 
     %type bound_symbol T::Symbol;
     %type fresh_symbol T::Symbol;
@@ -58,9 +58,6 @@ pomelo! {
 
     %type s_expr T::SExpr;
     %type s_exprs Vec<T::SExpr>;
-
-    %type index visitors::Index<T::Symbol>;
-    %type indices Vec<visitors::Index<T::Symbol>>;
 
     %type var_binding (T::Symbol, T::Term);
     %type var_bindings Vec<(T::Symbol, T::Term)>;
@@ -119,16 +116,9 @@ pomelo! {
     s_exprs ::= s_expr(x) { vec![x] }
     s_exprs ::= s_exprs(mut xs) s_expr(x) { xs.push(x); xs }
 
-    // index ::= ⟨numeral⟩ | ⟨symbol⟩
-    index ::= Numeral(x) { visitors::Index::Numeral(x) }
-    index ::= bound_symbol(x) { visitors::Index::Symbol(x) }
-
-    indices ::= index(x) { vec![x] }
-    indices ::= indices(mut xs) index(x) { xs.push(x); xs }
-
-    // identifier ::= ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
+    // identifier ::= ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨s_expr⟩+ )
     identifier ::= bound_symbol(symbol) { visitors::Identifier::Simple { symbol } }
-    identifier ::= LeftParen Underscore bound_symbol(symbol) indices(indices) RightParen { visitors::Identifier::Indexed { symbol, indices } }
+    identifier ::= LeftParen Underscore bound_symbol(symbol) s_exprs(indices) RightParen { visitors::Identifier::Indexed { symbol, indices } }
 
     // sort ::= ⟨identifier⟩ | ( ⟨identifier⟩ ⟨sort⟩+ )
     sort ::= identifier(id) { extra.0.visit_simple_sort(id)? }

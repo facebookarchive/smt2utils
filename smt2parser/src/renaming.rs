@@ -6,7 +6,7 @@
 use crate::{
     concrete::*,
     rewriter::Rewriter,
-    visitors::{Identifier, Index, Smt2Visitor, SymbolKind},
+    visitors::{Identifier, Smt2Visitor, SymbolKind},
 };
 use num::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +23,7 @@ impl<V> TesterModernizer<V> {
 
 impl<V, Error> Rewriter for TesterModernizer<V>
 where
-    V: Smt2Visitor<QualIdentifier = QualIdentifier, Symbol = Symbol, Error = Error>,
+    V: Smt2Visitor<QualIdentifier = QualIdentifier, Symbol = Symbol, SExpr = SExpr, Error = Error>,
 {
     type V = V;
     type Error = Error;
@@ -34,15 +34,16 @@ where
 
     fn visit_simple_identifier(
         &mut self,
-        value: Identifier<Symbol>,
+        value: Identifier<Symbol, SExpr>,
     ) -> Result<QualIdentifier, Error> {
         let value = match value {
             Identifier::Simple { symbol } if symbol.0.starts_with("is-") => {
                 let is = self.0.visit_bound_symbol("is".to_string())?;
                 let name = self.0.visit_bound_symbol(symbol.0[3..].to_string())?;
+                let index = self.0.visit_symbol_s_expr(name)?;
                 Identifier::Indexed {
                     symbol: is,
-                    indices: vec![Index::Symbol(name)],
+                    indices: vec![index],
                 }
             }
             v => v,

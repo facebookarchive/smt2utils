@@ -204,7 +204,7 @@ type Sort = ();
 type QualIdentifier = ();
 type SExpr = ();
 
-type Identifier = crate::visitors::Identifier<Symbol>;
+type Identifier = crate::visitors::Identifier<Symbol, SExpr>;
 type AttributeValue = crate::visitors::AttributeValue<Constant, Symbol, SExpr>;
 type DatatypeDec = crate::visitors::DatatypeDec<Symbol, Sort>;
 type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
@@ -234,7 +234,7 @@ impl SExprVisitor<Constant, Symbol, Keyword> for Smt2Counters {
     }
 }
 
-impl SortVisitor<Symbol> for Smt2Counters {
+impl SortVisitor<Symbol, SExpr> for Smt2Counters {
     type T = ();
     type E = Error;
 

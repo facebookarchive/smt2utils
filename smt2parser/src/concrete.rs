@@ -34,7 +34,7 @@ pub struct Symbol(pub String);
 pub struct Keyword(pub String);
 
 /// Concrete identifier.
-pub type Identifier = crate::visitors::Identifier<Symbol>;
+pub type Identifier = crate::visitors::Identifier<Symbol, SExpr>;
 
 /// Concrete syntax for an S-expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
@@ -321,7 +321,7 @@ impl SExpr {
     }
 }
 
-impl SortVisitor<Symbol> for SyntaxBuilder {
+impl SortVisitor<Symbol, SExpr> for SyntaxBuilder {
     type T = Sort;
     type E = Error;
 
@@ -343,21 +343,33 @@ impl SortVisitor<Symbol> for SyntaxBuilder {
 
 impl Sort {
     /// Visit a concrete sort.
-    pub fn accept<V, T, S, E>(self, visitor: &mut V) -> Result<T, E>
+    pub fn accept<V, C, S, K, T, SE, E>(self, visitor: &mut V) -> Result<T, E>
     where
-        V: SortVisitor<S, T = T, E = E> + SymbolVisitor<T = S, E = E>,
+        V: SortVisitor<S, SE, T = T, E = E>
+            + SExprVisitor<C, S, K, T = SE, E = E>
+            + ConstantVisitor<T = C, E = E>
+            + SymbolVisitor<T = S, E = E>
+            + KeywordVisitor<T = K, E = E>,
     {
         use Sort::*;
         match self {
             Simple { identifier } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_bound_symbol(s.0))?;
+                let i = identifier.remap(
+                    visitor,
+                    |v, s: Symbol| v.visit_bound_symbol(s.0),
+                    |v, s: SExpr| s.accept(v),
+                )?;
                 visitor.visit_simple_sort(i)
             }
             Parameterized {
                 identifier,
                 parameters,
             } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_bound_symbol(s.0))?;
+                let i = identifier.remap(
+                    visitor,
+                    |v, s: Symbol| v.visit_bound_symbol(s.0),
+                    |v, s: SExpr| s.accept(v),
+                )?;
                 let ts = parameters
                     .into_iter()
                     .map(|s| s.accept(visitor))
@@ -387,20 +399,31 @@ impl QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
 
 impl QualIdentifier {
     /// Visit a concrete qualified identifier.
-    pub fn accept<V, T, E, S1, S2>(self, visitor: &mut V) -> Result<T, E>
+    pub fn accept<V, T, E, S1, S2, S3, S4, S5>(self, visitor: &mut V) -> Result<T, E>
     where
-        V: SortVisitor<S1, T = S2, E = E>
+        V: SortVisitor<S1, S3, T = S2, E = E>
+            + ConstantVisitor<T = S4, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = T, E = E>,
+            + KeywordVisitor<T = S5, E = E>
+            + SExprVisitor<S4, S1, S5, T = S3, E = E>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1, S3>, S2, T = T, E = E>,
     {
         use QualIdentifier::*;
         match self {
             Simple { identifier } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_bound_symbol(s.0))?;
+                let i = identifier.remap(
+                    visitor,
+                    |v, s: Symbol| v.visit_bound_symbol(s.0),
+                    |v, s: SExpr| s.accept(v),
+                )?;
                 visitor.visit_simple_identifier(i)
             }
             Sorted { identifier, sort } => {
-                let i = identifier.remap(visitor, |v, s: Symbol| v.visit_bound_symbol(s.0))?;
+                let i = identifier.remap(
+                    visitor,
+                    |v, s: Symbol| v.visit_bound_symbol(s.0),
+                    |v, s: SExpr| s.accept(v),
+                )?;
                 let s = sort.accept(visitor)?;
                 visitor.visit_sorted_identifier(i, s)
             }
@@ -484,9 +507,9 @@ impl Term {
     /// Visit a concrete term.
     pub fn accept<V, T, E, S1, S2, S3, S4, S5, S6>(self, visitor: &mut V) -> Result<T, E>
     where
-        V: SortVisitor<S1, T = S2, E = E>
+        V: SortVisitor<S1, S6, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1, S6>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
@@ -788,9 +811,9 @@ impl Command {
     /// Visit a concrete command.
     pub fn accept<V, T, E, S1, S2, S3, S4, S5, S6, S7>(self, visitor: &mut V) -> Result<T, E>
     where
-        V: SortVisitor<S1, T = S2, E = E>
+        V: SortVisitor<S1, S6, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<crate::visitors::Identifier<S1, S6>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
