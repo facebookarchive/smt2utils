@@ -66,7 +66,7 @@ pub struct SymbolNormalizer<V> {
     bound_symbols: BTreeMap<String, Vec<usize>>,
 }
 
-const SYMBOL: &str = "x";
+const SYMBOL_PREFIX: &str = "x";
 
 impl<V> SymbolNormalizer<V> {
     pub fn new(visitor: V) -> Self {
@@ -79,11 +79,11 @@ impl<V> SymbolNormalizer<V> {
     }
 
     pub fn get_symbol(idx: usize) -> Symbol {
-        Symbol(format!("{}{}", SYMBOL, idx))
+        Symbol(format!("{}{}", SYMBOL_PREFIX, idx))
     }
 
     fn parse_symbol(s: &Symbol) -> usize {
-        str::parse(&s.0[SYMBOL.len()..]).expect("cannot parse symbol")
+        str::parse(&s.0[SYMBOL_PREFIX.len()..]).expect("cannot parse symbol")
     }
 
     /// Initial names of all local symbols that were renamed.
