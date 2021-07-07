@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "smt2proxy"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "rand",
  "smt2parser",
