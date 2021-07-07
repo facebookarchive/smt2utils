@@ -16,6 +16,10 @@ struct Options {
     #[structopt(long)]
     smt2: bool,
 
+    /// Print Z3 version.
+    #[structopt(long)]
+    version: bool,
+
     /// Use stdin for Z3 input.
     #[structopt(long)]
     r#in: bool,
@@ -207,6 +211,14 @@ fn main() {
     let options = Options::from_iter(iter_args());
     let smt2proxy_normalize_symbols = options.smt2proxy_config.smt2proxy_normalize_symbols;
 
+    if options.version {
+        std::process::Command::new("z3")
+            .arg("-version")
+            .status()
+            .unwrap();
+        return;
+    }
+
     // Spawn the command processor in a separate thread.
     let (sender, receiver) = std::sync::mpsc::channel();
     let handler = {
@@ -230,7 +242,7 @@ fn main() {
         let path = options
             .file
             .or(path_opt)
-            .expect("Input file is required unless flag `-in` is passed.");
+            .expect("Input file is required unless flags `-in` or `-version` are passed.");
         let f = std::fs::File::open(&path)
             .unwrap_or_else(|_| panic!("Failed to open input file {:?}", path));
         Box::new(std::io::BufReader::new(f))
