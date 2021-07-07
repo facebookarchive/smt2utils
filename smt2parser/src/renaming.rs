@@ -8,6 +8,7 @@ use crate::{
     rewriter::Rewriter,
     visitors::{Identifier, Index, Smt2Visitor},
 };
+use num::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A [`Rewriter`] implementation that converts old-style testers `is-Foo` into a proper indexed identifier `(_ is Foo)`.
@@ -64,6 +65,16 @@ pub struct SymbolNormalizer<V> {
     global_symbols: BTreeSet<String>,
     /// Currently bound symbols.
     bound_symbols: BTreeMap<String, Vec<usize>>,
+    /// Track (the size of) `local_symbols` and `bound_symbols` whenever a `(push)` command occurs.
+    scopes: Vec<Scope>,
+}
+
+#[derive(Debug, Default)]
+pub struct Scope {
+    /// Number of local symbols.
+    local: usize,
+    /// Current number of bound symbols.
+    bound: BTreeMap<String, usize>,
 }
 
 const SYMBOL_PREFIX: &str = "x";
@@ -75,6 +86,7 @@ impl<V> SymbolNormalizer<V> {
             local_symbols: Vec::new(),
             global_symbols: BTreeSet::new(),
             bound_symbols: BTreeMap::new(),
+            scopes: Vec::new(),
         }
     }
 
@@ -95,17 +107,62 @@ impl<V> SymbolNormalizer<V> {
     pub fn global_symbols(&self) -> impl IntoIterator<Item = &String> {
         &self.global_symbols
     }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(Scope {
+            local: self.local_symbols.len(),
+            bound: self
+                .bound_symbols
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.len()))
+                .collect(),
+        });
+    }
+
+    fn pop_scope(&mut self) {
+        if let Some(scope) = self.scopes.pop() {
+            self.local_symbols.truncate(scope.local);
+            let symbols = std::mem::take(&mut self.bound_symbols);
+            let symbols = symbols
+                .into_iter()
+                .filter_map(|(k, mut v)| match scope.bound.get(&k) {
+                    Some(n) => {
+                        v.truncate(*n);
+                        Some((k, v))
+                    }
+                    None => None,
+                })
+                .collect();
+            self.bound_symbols = symbols;
+        }
+    }
 }
 
 impl<V, Error> Rewriter for SymbolNormalizer<V>
 where
-    V: Smt2Visitor<Symbol = Symbol, Error = Error>,
+    V: Smt2Visitor<Symbol = Symbol, Command = Command, Error = Error>,
 {
     type V = V;
     type Error = Error;
 
     fn visitor(&mut self) -> &mut V {
         &mut self.visitor
+    }
+
+    fn visit_push(&mut self, level: crate::Numeral) -> Result<Command, Error> {
+        for _ in 0..level.to_usize().expect("too many levels") {
+            self.push_scope();
+        }
+        let value = self.visitor().visit_push(level)?;
+        self.process_command(value)
+    }
+
+    fn visit_pop(&mut self, level: crate::Numeral) -> Result<Command, Error> {
+        for _ in 0..level.to_usize().expect("too many levels") {
+            self.pop_scope();
+        }
+        let value = self.visitor().visit_pop(level)?;
+        self.process_command(value)
     }
 
     fn visit_bound_symbol(&mut self, value: String) -> Result<Symbol, Error> {
@@ -138,6 +195,13 @@ where
         let value = self.local_symbols[i].clone();
         match self.bound_symbols.entry(value) {
             btree_map::Entry::Occupied(mut e) => {
+                if let Some(scope) = self.scopes.last() {
+                    if let Some(n) = scope.bound.get(&self.local_symbols[i]) {
+                        // Never unbind names from the previous scope.
+                        assert!(e.get().len() > *n);
+                    }
+                }
+                // Check that we unbind the expected symbol.
                 assert_eq!(e.get_mut().pop().unwrap(), i);
                 if e.get().is_empty() {
                     e.remove_entry();
