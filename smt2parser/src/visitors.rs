@@ -71,41 +71,22 @@ pub trait SExprVisitor<Constant, Symbol, Keyword> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Index<Symbol> {
-    Numeral(Numeral),
-    Symbol(Symbol),
+pub enum Identifier<Symbol, SExpr> {
+    Simple { symbol: Symbol },
+    Indexed { symbol: Symbol, indices: Vec<SExpr> },
 }
 
-impl<S> Index<S> {
-    /// Remap the symbols of an Index value.
-    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Index<T>, E>
-    where
-        F: Copy + Fn(&mut V, S) -> Result<T, E>,
-    {
-        use Index::*;
-        match self {
-            Numeral(n) => Ok(Numeral(n)),
-            Symbol(s) => Ok(Symbol(f(v, s)?)),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Identifier<Symbol> {
-    Simple {
-        symbol: Symbol,
-    },
-    Indexed {
-        symbol: Symbol,
-        indices: Vec<Index<Symbol>>,
-    },
-}
-
-impl<S> Identifier<S> {
+impl<S, SE> Identifier<S, SE> {
     /// Remap the symbols of an Identifier value.
-    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Identifier<T>, E>
+    pub(crate) fn remap<F, G, V, T, TE, E>(
+        self,
+        v: &mut V,
+        f: F,
+        g: G,
+    ) -> Result<Identifier<T, TE>, E>
     where
         F: Copy + Fn(&mut V, S) -> Result<T, E>,
+        G: Copy + Fn(&mut V, SE) -> Result<TE, E>,
     {
         use Identifier::*;
         match self {
@@ -116,21 +97,24 @@ impl<S> Identifier<S> {
                 symbol: f(v, symbol)?,
                 indices: indices
                     .into_iter()
-                    .map(|i| i.remap(v, f))
+                    .map(|i| g(v, i))
                     .collect::<Result<_, E>>()?,
             }),
         }
     }
 }
 
-pub trait SortVisitor<Symbol> {
+pub trait SortVisitor<Symbol, SExpr> {
     type T;
     type E;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier<Symbol>) -> Result<Self::T, Self::E>;
+    fn visit_simple_sort(
+        &mut self,
+        identifier: Identifier<Symbol, SExpr>,
+    ) -> Result<Self::T, Self::E>;
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier<Symbol>,
+        identifier: Identifier<Symbol, SExpr>,
         parameters: Vec<Self::T>,
     ) -> Result<Self::T, Self::E>;
 }
@@ -451,12 +435,13 @@ pub trait Smt2Visitor:
         T = <Self as Smt2Visitor>::SExpr,
         E = <Self as Smt2Visitor>::Error,
     > + QualIdentifierVisitor<
-        Identifier<<Self as Smt2Visitor>::Symbol>,
+        Identifier<<Self as Smt2Visitor>::Symbol, <Self as Smt2Visitor>::SExpr>,
         <Self as Smt2Visitor>::Sort,
         T = <Self as Smt2Visitor>::QualIdentifier,
         E = <Self as Smt2Visitor>::Error,
     > + SortVisitor<
         <Self as Smt2Visitor>::Symbol,
+        <Self as Smt2Visitor>::SExpr,
         T = <Self as Smt2Visitor>::Sort,
         E = <Self as Smt2Visitor>::Error,
     > + TermVisitor<
@@ -493,25 +478,13 @@ pub trait Smt2Visitor:
     fn parsing_error(&mut self, position: crate::Position, s: String) -> Self::Error;
 }
 
-impl<Symbol> std::fmt::Display for Index<Symbol>
+impl<Symbol, SExpr> std::fmt::Display for Identifier<Symbol, SExpr>
 where
     Symbol: std::fmt::Display,
+    SExpr: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // ⟨numeral⟩ | ⟨symbol⟩
-        match self {
-            Index::Numeral(num) => write!(f, "{}", num),
-            Index::Symbol(sym) => write!(f, "{}", sym),
-        }
-    }
-}
-
-impl<Symbol> std::fmt::Display for Identifier<Symbol>
-where
-    Symbol: std::fmt::Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
+        // ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨s_expr⟩+ )
         match self {
             Identifier::Simple { symbol } => write!(f, "{}", symbol),
             Identifier::Indexed { symbol, indices } => {

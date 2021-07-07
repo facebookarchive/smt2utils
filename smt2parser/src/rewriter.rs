@@ -185,14 +185,14 @@ pub trait Rewriter {
     // SortVisitor
     fn visit_simple_sort(
         &mut self,
-        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::SExpr>,
     ) -> Result<<Self::V as Smt2Visitor>::Sort, Self::Error> {
         let value = self.visitor().visit_simple_sort(identifier)?;
         self.process_sort(value)
     }
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::SExpr>,
         parameters: Vec<<Self::V as Smt2Visitor>::Sort>,
     ) -> Result<<Self::V as Smt2Visitor>::Sort, Self::Error> {
         let value = self
@@ -204,14 +204,14 @@ pub trait Rewriter {
     // QualIdentifierVisitor
     fn visit_simple_identifier(
         &mut self,
-        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::SExpr>,
     ) -> Result<<Self::V as Smt2Visitor>::QualIdentifier, Self::Error> {
         let value = self.visitor().visit_simple_identifier(identifier)?;
         self.process_qual_identifier(value)
     }
     fn visit_sorted_identifier(
         &mut self,
-        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol>,
+        identifier: Identifier<<Self::V as Smt2Visitor>::Symbol, <Self::V as Smt2Visitor>::SExpr>,
         sort: <Self::V as Smt2Visitor>::Sort,
     ) -> Result<<Self::V as Smt2Visitor>::QualIdentifier, Self::Error> {
         let value = self.visitor().visit_sorted_identifier(identifier, sort)?;
@@ -606,7 +606,7 @@ where
     }
 }
 
-impl<R, V> SortVisitor<V::Symbol> for R
+impl<R, V> SortVisitor<V::Symbol, V::SExpr> for R
 where
     R: Rewriter<V = V>,
     V: Smt2Visitor,
@@ -614,20 +614,23 @@ where
     type T = V::Sort;
     type E = R::Error;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier<V::Symbol>) -> Result<Self::T, Self::E> {
+    fn visit_simple_sort(
+        &mut self,
+        identifier: Identifier<V::Symbol, V::SExpr>,
+    ) -> Result<Self::T, Self::E> {
         self.visit_simple_sort(identifier)
     }
 
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier<V::Symbol>,
+        identifier: Identifier<V::Symbol, V::SExpr>,
         parameters: Vec<Self::T>,
     ) -> Result<Self::T, Self::E> {
         self.visit_parameterized_sort(identifier, parameters)
     }
 }
 
-impl<R, V> QualIdentifierVisitor<Identifier<V::Symbol>, V::Sort> for R
+impl<R, V> QualIdentifierVisitor<Identifier<V::Symbol, V::SExpr>, V::Sort> for R
 where
     R: Rewriter<V = V>,
     V: Smt2Visitor,
@@ -637,14 +640,14 @@ where
 
     fn visit_simple_identifier(
         &mut self,
-        identifier: Identifier<V::Symbol>,
+        identifier: Identifier<V::Symbol, V::SExpr>,
     ) -> Result<Self::T, Self::E> {
         self.visit_simple_identifier(identifier)
     }
 
     fn visit_sorted_identifier(
         &mut self,
-        identifier: Identifier<V::Symbol>,
+        identifier: Identifier<V::Symbol, V::SExpr>,
         sort: V::Sort,
     ) -> Result<Self::T, Self::E> {
         self.visit_sorted_identifier(identifier, sort)
