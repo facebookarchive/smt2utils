@@ -42,7 +42,6 @@ pomelo! {
     %type identifier visitors::Identifier<T::Symbol>;
 
     %type bound_symbol T::Symbol;
-    %type bound_symbols Vec<T::Symbol>;
     %type fresh_symbol T::Symbol;
     %type fresh_symbols Vec<T::Symbol>;
     %type any_symbol T::Symbol;
@@ -97,8 +96,6 @@ pomelo! {
     any_symbol ::= Symbol(s) { extra.0.visit_any_symbol(s)? }
     keyword ::= Keyword(s) { extra.0.visit_keyword(s)? }
 
-    bound_symbols ::= bound_symbol(x) { vec![x] }
-    bound_symbols ::= bound_symbols(mut xs) bound_symbol(x) { xs.push(x); xs }
     fresh_symbols ::= fresh_symbol(x) { vec![x] }
     fresh_symbols ::= fresh_symbols(mut xs) fresh_symbol(x) { xs.push(x); xs }
     pattern_symbols ::= any_symbol(x) { vec![x] }

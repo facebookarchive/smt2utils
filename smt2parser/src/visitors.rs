@@ -18,13 +18,13 @@ pub trait ConstantVisitor {
     fn visit_string_constant(&mut self, value: String) -> Result<Self::T, Self::E>;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub enum SymbolKind {
     Unknown,
     Variable,
-    Sort,
     Constant,
     Function,
+    Sort,
     Datatype,
     TypeVar,
     Constructor,
