@@ -5,12 +5,13 @@
 
 use smt2parser::{
     concrete::SyntaxBuilder,
-    renaming::{SymbolNormalizer, TesterModernizer},
+    renaming::{SymbolNormalizer, SymbolNormalizerConfig, TesterModernizer},
     stats::Smt2Counters,
     CommandStream,
 };
 use std::path::PathBuf;
 use structopt::StructOpt;
+use strum::IntoEnumIterator;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -29,6 +30,14 @@ enum Operation {
         /// Normalize bound symbols to x0, x1..
         #[structopt(long)]
         normalize_symbols: bool,
+
+        /// When normalizing symbols, indices in the range 0..N will be randomly permuted.
+        #[structopt(long, default_value = "0")]
+        max_randomized_symbols: usize,
+
+        /// Optional seed for randomization purposes.
+        #[structopt(long)]
+        symbol_randomization_seed: Option<u64>,
 
         /// Path to the SMT2 files.
         #[structopt(parse(from_os_str))]
@@ -85,10 +94,20 @@ fn main() -> std::io::Result<()> {
     match options.operation {
         Operation::Print {
             normalize_symbols,
+            max_randomized_symbols,
+            symbol_randomization_seed,
             inputs,
         } => {
+            let randomization_space = smt2parser::visitors::SymbolKind::iter()
+                .map(|k| (k, max_randomized_symbols))
+                .collect();
+            let randomization_seed = symbol_randomization_seed.unwrap_or_else(rand::random);
+            let config = SymbolNormalizerConfig {
+                randomization_space,
+                randomization_seed,
+            };
             if normalize_symbols {
-                let mut normalizer = SymbolNormalizer::new(SyntaxBuilder);
+                let mut normalizer = SymbolNormalizer::new(SyntaxBuilder, config);
                 for input in inputs {
                     // 1. Parse input commands while rewriting `is-Foo` into `(_ is Foo)` on the fly with TesterModernizer.
                     process_file(TesterModernizer::new(SyntaxBuilder), input, |command| {

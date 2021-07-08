@@ -6,6 +6,7 @@
 use crate::{Binary, Decimal, Hexadecimal, Numeral};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 pub trait ConstantVisitor {
     type T;
@@ -18,7 +19,7 @@ pub trait ConstantVisitor {
     fn visit_string_constant(&mut self, value: String) -> Result<Self::T, Self::E>;
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, EnumIter)]
 pub enum SymbolKind {
     Unknown,
     Variable,
