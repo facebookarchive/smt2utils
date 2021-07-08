@@ -13,6 +13,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use structopt::StructOpt;
+use strum::IntoEnumIterator;
 
 /// Configuration for the SMT2 command processor.
 #[derive(Debug, Clone, StructOpt)]
@@ -31,6 +32,12 @@ pub struct CommandProcessorConfig {
 
     #[structopt(long, env)]
     pub smt2proxy_normalize_symbols: bool,
+
+    #[structopt(long, env, default_value = "0")]
+    smt2proxy_max_randomized_symbols: usize,
+
+    #[structopt(long, env)]
+    smt2proxy_symbol_randomization_seed: Option<u64>,
 
     #[structopt(long, env, parse(try_from_str = parse_smt2_options), default_value = "")]
     smt2proxy_options: BTreeMap<Keyword, AttributeValue>,
@@ -101,7 +108,18 @@ impl From<CommandProcessorConfig> for CommandProcessor {
             );
         }
         let rewriter = if config.smt2proxy_normalize_symbols {
-            Some(Rewriter::default())
+            let max_randomized_symbols = config.smt2proxy_max_randomized_symbols;
+            let randomization_space = smt2parser::visitors::SymbolKind::iter()
+                .map(|k| (k, max_randomized_symbols))
+                .collect();
+            let randomization_seed = config
+                .smt2proxy_symbol_randomization_seed
+                .unwrap_or_else(rand::random);
+            let config = smt2parser::renaming::SymbolNormalizerConfig {
+                randomization_space,
+                randomization_seed,
+            };
+            Some(Rewriter::new(SyntaxBuilder, config))
         } else {
             None
         };
