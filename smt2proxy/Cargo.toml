@@ -19,6 +19,7 @@ exclude = [
 rand = "0.8.0"
 structopt = "0.3.12"
 smt2parser = { path = "../smt2parser", version = "0.5.2" }
+strum = { version = "0.21" }
 
 [[bin]]
 name = "smt2proxy"
