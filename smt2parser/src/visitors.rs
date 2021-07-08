@@ -18,20 +18,33 @@ pub trait ConstantVisitor {
     fn visit_string_constant(&mut self, value: String) -> Result<Self::T, Self::E>;
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SymbolKind {
+    Unknown,
+    Variable,
+    Sort,
+    Constant,
+    Function,
+    Datatype,
+    TypeVar,
+    Constructor,
+    Selector,
+}
+
 pub trait SymbolVisitor {
     type T;
     type E;
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Result<Self::T, Self::E>;
+    fn visit_fresh_symbol(&mut self, value: String, kind: SymbolKind) -> Result<Self::T, Self::E>;
 
     fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
-        self.visit_fresh_symbol(value)
+        self.visit_fresh_symbol(value, SymbolKind::Unknown)
     }
 
     // If the symbol is not a valid bound symbol, try to create a fresh one.
     fn visit_any_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
         self.visit_bound_symbol(value.clone())
-            .or_else(|_| self.visit_fresh_symbol(value))
+            .or_else(|_| self.visit_fresh_symbol(value, SymbolKind::Unknown))
     }
 
     fn bind_symbol(&mut self, _symbol: &Self::T) {}
@@ -146,9 +159,9 @@ impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
     pub(crate) fn remap<V, F1, F2, F3, R1, R2, R3, E>(
         self,
         v: &mut V,
-        f1: F1,
-        f2: F2,
-        f3: F3,
+        fcst: F1,
+        fsym: F2,
+        fsexp: F3,
     ) -> Result<AttributeValue<R1, R2, R3>, E>
     where
         F1: Fn(&mut V, T1) -> Result<R1, E>,
@@ -158,12 +171,12 @@ impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
         use AttributeValue::*;
         let value = match self {
             None => None,
-            Constant(value) => Constant(f1(v, value)?),
-            Symbol(value) => Symbol(f2(v, value)?),
+            Constant(value) => Constant(fcst(v, value)?),
+            Symbol(value) => Symbol(fsym(v, value)?),
             SExpr(values) => SExpr(
                 values
                     .into_iter()
-                    .map(|x| f3(v, x))
+                    .map(|x| fsexp(v, x))
                     .collect::<Result<_, E>>()?,
             ),
         };
@@ -227,22 +240,25 @@ pub struct ConstructorDec<Symbol, Sort> {
 
 impl<T1, T2> ConstructorDec<T1, T2> {
     /// Remap the generically-typed values of a ConstructorDec value.
-    pub(crate) fn remap<V, F1, F2, R1, R2, E>(
+    /// Note: Constructor symbols and selector symbols are remapped using distinct function `fcons` and `fsel`.
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
         self,
         v: &mut V,
-        f1: F1,
-        f2: F2,
+        fcons: F1,
+        fsel: F2,
+        fsort: F3,
     ) -> Result<ConstructorDec<R1, R2>, E>
     where
         F1: Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Fn(&mut V, T2) -> Result<R2, E>,
+        F2: Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Fn(&mut V, T2) -> Result<R2, E>,
     {
         Ok(ConstructorDec {
-            symbol: f1(v, self.symbol)?,
+            symbol: fcons(v, self.symbol)?,
             selectors: self
                 .selectors
                 .into_iter()
-                .map(|(s1, s2)| Ok((f1(v, s1)?, f2(v, s2)?)))
+                .map(|(s1, s2)| Ok((fsel(v, s1)?, fsort(v, s2)?)))
                 .collect::<Result<_, E>>()?,
         })
     }
@@ -256,26 +272,30 @@ pub struct DatatypeDec<Symbol, Sort> {
 
 impl<T1, T2> DatatypeDec<T1, T2> {
     /// Remap the generically-typed values of a DatatypeDec value.
-    pub(crate) fn remap<V, F1, F2, R1, R2, E>(
+    pub(crate) fn remap<V, F1, F2, F3, F4, R1, R2, E>(
         self,
         v: &mut V,
-        f1: F1,
-        f2: F2,
+        fpar: F1,
+        fcons: F2,
+        fsel: F3,
+        fsort: F4,
     ) -> Result<DatatypeDec<R1, R2>, E>
     where
         F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F4: Copy + Fn(&mut V, T2) -> Result<R2, E>,
     {
         Ok(DatatypeDec {
             parameters: self
                 .parameters
                 .into_iter()
-                .map(|x| f1(v, x))
+                .map(|x| fpar(v, x))
                 .collect::<Result<_, E>>()?,
             constructors: self
                 .constructors
                 .into_iter()
-                .map(|c| c.remap(v, f1, f2))
+                .map(|c| c.remap(v, fcons, fsel, fsort))
                 .collect::<Result<_, E>>()?,
         })
     }
@@ -290,24 +310,26 @@ pub struct FunctionDec<Symbol, Sort> {
 
 impl<T1, T2> FunctionDec<T1, T2> {
     /// Remap the generically-typed values of a FunctionDec value.
-    pub(crate) fn remap<V, F1, F2, R1, R2, E>(
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
         self,
         v: &mut V,
-        f1: F1,
-        f2: F2,
+        ffun: F1,
+        fvar: F2,
+        fsort: F3,
     ) -> Result<FunctionDec<R1, R2>, E>
     where
         F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T2) -> Result<R2, E>,
     {
         Ok(FunctionDec {
-            name: f1(v, self.name)?,
+            name: ffun(v, self.name)?,
             parameters: self
                 .parameters
                 .into_iter()
-                .map(|(s1, s2)| Ok((f1(v, s1)?, f2(v, s2)?)))
+                .map(|(s1, s2)| Ok((fvar(v, s1)?, fsort(v, s2)?)))
                 .collect::<Result<_, E>>()?,
-            result: f2(v, self.result)?,
+            result: fsort(v, self.result)?,
         })
     }
 }

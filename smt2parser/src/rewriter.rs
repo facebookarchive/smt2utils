@@ -8,7 +8,7 @@
 use crate::{
     visitors::{
         AttributeValue, CommandVisitor, ConstantVisitor, DatatypeDec, FunctionDec, Identifier,
-        KeywordVisitor, QualIdentifierVisitor, SExprVisitor, Smt2Visitor, SortVisitor,
+        KeywordVisitor, QualIdentifierVisitor, SExprVisitor, Smt2Visitor, SortVisitor, SymbolKind,
         SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
@@ -121,8 +121,9 @@ pub trait Rewriter {
     fn visit_fresh_symbol(
         &mut self,
         value: String,
+        kind: SymbolKind,
     ) -> Result<<Self::V as Smt2Visitor>::Symbol, Self::Error> {
-        let value = self.visitor().visit_fresh_symbol(value)?;
+        let value = self.visitor().visit_fresh_symbol(value, kind)?;
         self.process_symbol(value)
     }
 
@@ -546,8 +547,8 @@ where
     type T = V::Symbol;
     type E = R::Error;
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
-        self.visit_fresh_symbol(value)
+    fn visit_fresh_symbol(&mut self, value: String, kind: SymbolKind) -> Result<Self::T, Self::E> {
+        self.visit_fresh_symbol(value, kind)
     }
 
     fn visit_bound_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
