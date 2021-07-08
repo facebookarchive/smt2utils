@@ -59,48 +59,82 @@ where
 pub struct SymbolNormalizer<V> {
     /// The underlying syntax visitor.
     visitor: V,
-    /// Track the original name of local symbols.
-    local_symbols: Vec<String>,
+    /// Track the original name of local symbols, indexed by kind.
+    local_symbols: BTreeMap<SymbolKind, Vec<String>>,
     /// Track symbols that were not resolved (thus ignored).
     global_symbols: BTreeSet<String>,
     /// Currently bound symbols.
-    bound_symbols: BTreeMap<String, Vec<usize>>,
+    bound_symbols: BTreeMap<String, Vec<SymbolRef>>,
     /// Track (the size of) `local_symbols` and `bound_symbols` whenever a `(push)` command occurs.
     scopes: Vec<Scope>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+struct SymbolRef {
+    kind: SymbolKind,
+    index: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct Scope {
-    /// Number of local symbols.
-    local: usize,
+    /// Number of local symbols index by kind.
+    local: BTreeMap<SymbolKind, usize>,
     /// Current number of bound symbols.
     bound: BTreeMap<String, usize>,
 }
-
-const SYMBOL_PREFIX: &str = "x";
 
 impl<V> SymbolNormalizer<V> {
     pub fn new(visitor: V) -> Self {
         Self {
             visitor,
-            local_symbols: Vec::new(),
+            local_symbols: BTreeMap::new(),
             global_symbols: BTreeSet::new(),
             bound_symbols: BTreeMap::new(),
             scopes: Vec::new(),
         }
     }
 
-    pub fn get_symbol(idx: usize) -> Symbol {
-        Symbol(format!("{}{}", SYMBOL_PREFIX, idx))
+    fn get_symbol(r: SymbolRef) -> Symbol {
+        use SymbolKind::*;
+        let prefix = match r.kind {
+            Unknown => "?",
+            Variable => "x",
+            Constant => "k",
+            Function => "f",
+            Sort => "S",
+            Datatype => "T",
+            TypeVar => "X",
+            Constructor => "c",
+            Selector => "s",
+        };
+        Symbol(format!("{}{}", prefix, r.index))
     }
 
-    fn parse_symbol(s: &Symbol) -> usize {
-        str::parse(&s.0[SYMBOL_PREFIX.len()..]).expect("cannot parse symbol")
+    fn parse_symbol(s: &Symbol) -> SymbolRef {
+        use SymbolKind::*;
+        let kind = match &s.0[0..1] {
+            "?" => Unknown,
+            "x" => Variable,
+            "k" => Constant,
+            "f" => Function,
+            "S" => Sort,
+            "T" => Datatype,
+            "X" => TypeVar,
+            "c" => Constructor,
+            "s" => Selector,
+            _ => panic!("cannot parse symbol kind"),
+        };
+        let index = str::parse(&s.0[1..]).expect("cannot parse symbol index");
+        SymbolRef { kind, index }
     }
 
     /// Initial names of all local symbols that were renamed.
-    pub fn local_symbols(&self) -> impl IntoIterator<Item = &String> {
+    pub fn local_symbols(&self) -> impl IntoIterator<Item = (&SymbolKind, &Vec<String>)> {
         &self.local_symbols
+    }
+
+    fn local_symbol(&self, r: SymbolRef) -> &str {
+        &self.local_symbols.get(&r.kind).unwrap()[r.index]
     }
 
     /// Symbols that failed to resolve locally (e.g. theory defined).
@@ -110,30 +144,38 @@ impl<V> SymbolNormalizer<V> {
 
     fn push_scope(&mut self) {
         self.scopes.push(Scope {
-            local: self.local_symbols.len(),
+            local: self
+                .local_symbols
+                .iter()
+                .map(|(k, v)| (*k, v.len()))
+                .collect(),
             bound: self
                 .bound_symbols
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.len()))
+                .map(|(k, v)| (k.clone(), v.len()))
                 .collect(),
         });
     }
 
+    fn truncate_vectors<T: Ord, S>(sizes: &BTreeMap<T, usize>, vectors: &mut BTreeMap<T, Vec<S>>) {
+        let vs = std::mem::take(vectors);
+        let vs = vs
+            .into_iter()
+            .filter_map(|(k, mut v)| match sizes.get(&k) {
+                Some(n) => {
+                    v.truncate(*n);
+                    Some((k, v))
+                }
+                None => None,
+            })
+            .collect();
+        *vectors = vs;
+    }
+
     fn pop_scope(&mut self) {
         if let Some(scope) = self.scopes.pop() {
-            self.local_symbols.truncate(scope.local);
-            let symbols = std::mem::take(&mut self.bound_symbols);
-            let symbols = symbols
-                .into_iter()
-                .filter_map(|(k, mut v)| match scope.bound.get(&k) {
-                    Some(n) => {
-                        v.truncate(*n);
-                        Some((k, v))
-                    }
-                    None => None,
-                })
-                .collect();
-            self.bound_symbols = symbols;
+            Self::truncate_vectors(&scope.local, &mut self.local_symbols);
+            Self::truncate_vectors(&scope.bound, &mut self.bound_symbols);
         }
     }
 }
@@ -186,32 +228,38 @@ where
         self.process_symbol(value)
     }
 
-    fn visit_fresh_symbol(&mut self, value: String, _kind: SymbolKind) -> Result<Symbol, Error> {
-        let s = Self::get_symbol(self.local_symbols.len());
-        self.local_symbols.push(value);
+    fn visit_fresh_symbol(&mut self, value: String, kind: SymbolKind) -> Result<Symbol, Error> {
+        let s = Self::get_symbol(SymbolRef {
+            kind,
+            index: match self.local_symbols.get(&kind) {
+                Some(v) => v.len(),
+                None => 0,
+            },
+        });
+        self.local_symbols.entry(kind).or_default().push(value);
         self.process_symbol(s)
     }
 
     fn bind_symbol(&mut self, symbol: &Symbol) {
-        let i = Self::parse_symbol(symbol);
-        let value = self.local_symbols[i].clone();
-        self.bound_symbols.entry(value).or_default().push(i);
+        let r = Self::parse_symbol(symbol);
+        let value = self.local_symbol(r).to_string();
+        self.bound_symbols.entry(value).or_default().push(r);
     }
 
     fn unbind_symbol(&mut self, symbol: &Symbol) {
         use std::collections::btree_map;
-        let i = Self::parse_symbol(symbol);
-        let value = self.local_symbols[i].clone();
-        match self.bound_symbols.entry(value) {
+        let r = Self::parse_symbol(symbol);
+        let value = self.local_symbol(r).to_string();
+        match self.bound_symbols.entry(value.clone()) {
             btree_map::Entry::Occupied(mut e) => {
                 if let Some(scope) = self.scopes.last() {
-                    if let Some(n) = scope.bound.get(&self.local_symbols[i]) {
+                    if let Some(n) = scope.bound.get(&value) {
                         // Never unbind names from the previous scope.
                         assert!(e.get().len() > *n);
                     }
                 }
                 // Check that we unbind the expected symbol.
-                assert_eq!(e.get_mut().pop().unwrap(), i);
+                assert_eq!(e.get_mut().pop().unwrap(), r);
                 if e.get().is_empty() {
                     e.remove_entry();
                 }
@@ -271,11 +319,11 @@ fn test_declare_datatypes_renaming() {
     let value2 = parse_tokens(Lexer::new(
         &b"
 (declare-datatypes (
-    (x0 0)
-    (x1 0)
+    (T0 0)
+    (T1 0)
 )(
-    ((x2) (x3 (x4 x0)) (x5 (x6 Name) (x7 x1)))
-    ((x8 (x9 (Array Int x0)) (x10 Int)))
+    ((c0) (c1 (s0 T0)) (c2 (s1 Name) (s2 T1)))
+    ((c3 (s3 (Array Int T0)) (s4 Int)))
 ))"[..],
     ))
     .unwrap();
@@ -374,7 +422,7 @@ fn test_symbol_renaming() {
     assert_eq!(command2, command3);
     assert_eq!(
         builder.local_symbols().into_iter().collect::<Vec<_>>(),
-        vec!["x"]
+        vec![(&SymbolKind::Variable, &vec!["x".to_string()])]
     );
     assert_eq!(
         builder.global_symbols().into_iter().collect::<Vec<_>>(),
