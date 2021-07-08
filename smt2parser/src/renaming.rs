@@ -62,10 +62,14 @@ where
 pub struct SymbolNormalizer<V> {
     /// The underlying syntax visitor.
     visitor: V,
+    /// Configuration.
+    config: SymbolNormalizerConfig,
     /// Original names of current local symbols, indexed by kind.
     current_local_symbols: BTreeMap<SymbolKind, Vec<String>>,
     /// Currently bound symbols.
     current_bound_symbols: BTreeMap<String, Vec<LocalSymbolRef>>,
+    /// Encoding tables for name randomization (if any).
+    encoding_tables: BTreeMap<SymbolKind, EncodingTable>,
     /// Support the scoping of symbols with `push` and `pop` commands.
     scopes: Vec<Scope>,
     /// Accumulate symbols that were not resolved (thus ignored).
@@ -81,6 +85,66 @@ struct LocalSymbolRef {
     index: usize,
 }
 
+/// Configuration for SymbolNormalizer.
+#[derive(Debug, Default)]
+pub struct SymbolNormalizerConfig {
+    /// For each kind K and value N in the map, the first N local variables of kind K will
+    /// be assigned a randomized index in the range 0..N. Other variables will be given a
+    /// sequential index (greater or equal to N).
+    pub randomization_space: BTreeMap<SymbolKind, usize>,
+    /// Seed for the randomization of local symbols.
+    pub randomization_seed: u64,
+}
+
+struct EncodingTable {
+    max_size: usize,
+    permutor: permutation_iterator::Permutor,
+    numbers: Vec<usize>,
+    indices: BTreeMap<usize, usize>,
+}
+
+impl std::fmt::Debug for EncodingTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.debug_struct("EncodingTable")
+            .field("max_size", &self.max_size)
+            .field("numbers", &self.numbers)
+            .field("indices", &self.indices)
+            .finish()
+    }
+}
+
+impl EncodingTable {
+    fn new(seed: u64, max_size: usize) -> Self {
+        let permutor = permutation_iterator::Permutor::new_with_u64_key(max_size as u64, seed);
+        Self {
+            max_size,
+            permutor,
+            numbers: Vec::new(),
+            indices: BTreeMap::new(),
+        }
+    }
+
+    fn encode(&mut self, x: usize) -> usize {
+        if x >= self.max_size {
+            return x;
+        }
+        for _ in self.numbers.len()..=x {
+            let y = self
+                .permutor
+                .next()
+                .expect("should not be called more than max_size times")
+                as usize;
+            self.indices.insert(y, self.numbers.len());
+            self.numbers.push(y);
+        }
+        self.numbers[x]
+    }
+
+    fn decode(&self, x: usize) -> usize {
+        *self.indices.get(&x).unwrap_or(&x)
+    }
+}
+
 /// Track the size of `current_local_symbols` and `current_bound_symbols` so that we can
 /// backtrack later.
 #[derive(Debug, Default)]
@@ -92,18 +156,25 @@ struct Scope {
 }
 
 impl<V> SymbolNormalizer<V> {
-    pub fn new(visitor: V) -> Self {
+    pub fn new(visitor: V, config: SymbolNormalizerConfig) -> Self {
+        let mut encoding_tables = BTreeMap::new();
+        for (kind, n) in config.randomization_space.iter() {
+            let table = EncodingTable::new(config.randomization_seed + *kind as u64, *n);
+            encoding_tables.insert(*kind, table);
+        }
         Self {
             visitor,
+            config,
             current_local_symbols: BTreeMap::new(),
             current_bound_symbols: BTreeMap::new(),
+            encoding_tables,
             global_symbols: BTreeSet::new(),
             scopes: Vec::new(),
             max_local_symbols: BTreeMap::new(),
         }
     }
 
-    fn get_symbol(r: LocalSymbolRef) -> Symbol {
+    fn get_external_symbol(table: Option<&mut EncodingTable>, r: LocalSymbolRef) -> Symbol {
         use SymbolKind::*;
         let prefix = match r.kind {
             Unknown => "?",
@@ -116,10 +187,14 @@ impl<V> SymbolNormalizer<V> {
             Constructor => "c",
             Selector => "s",
         };
-        Symbol(format!("{}{}", prefix, r.index))
+        let index = match table {
+            Some(table) => table.encode(r.index),
+            None => r.index,
+        };
+        Symbol(format!("{}{}", prefix, index))
     }
 
-    fn parse_symbol(s: &Symbol) -> LocalSymbolRef {
+    fn parse_external_symbol(&self, s: &Symbol) -> LocalSymbolRef {
         use SymbolKind::*;
         let kind = match &s.0[0..1] {
             "?" => Unknown,
@@ -134,6 +209,10 @@ impl<V> SymbolNormalizer<V> {
             _ => panic!("cannot parse symbol kind"),
         };
         let index = str::parse(&s.0[1..]).expect("cannot parse symbol index");
+        let index = match self.encoding_tables.get(&kind) {
+            Some(table) => table.decode(index),
+            None => index,
+        };
         LocalSymbolRef { kind, index }
     }
 
@@ -147,7 +226,7 @@ impl<V> SymbolNormalizer<V> {
         &self.max_local_symbols
     }
 
-    fn local_symbol_name(&self, r: LocalSymbolRef) -> String {
+    fn original_symbol_name(&self, r: LocalSymbolRef) -> String {
         self.current_local_symbols.get(&r.kind).unwrap()[r.index].to_string()
     }
 
@@ -230,10 +309,14 @@ where
     }
 
     fn visit_bound_symbol(&mut self, value: String) -> Result<Symbol, Error> {
+        let tables = &mut self.encoding_tables;
         let value = self
             .current_bound_symbols
             .get(&value)
-            .map(|v| Self::get_symbol(*v.last().unwrap()))
+            .map(|v| {
+                let r = *v.last().unwrap();
+                Self::get_external_symbol(tables.get_mut(&r.kind), r)
+            })
             .unwrap_or_else(|| {
                 self.global_symbols.insert(value.clone());
                 Symbol(value)
@@ -255,19 +338,20 @@ where
             .push(value);
         let n = self.max_local_symbols.entry(kind).or_default();
         *n = std::cmp::max(*n, r.index + 1);
-        self.process_symbol(Self::get_symbol(r))
+        let s = Self::get_external_symbol(self.encoding_tables.get_mut(&r.kind), r);
+        self.process_symbol(s)
     }
 
     fn bind_symbol(&mut self, symbol: &Symbol) {
-        let r = Self::parse_symbol(symbol);
-        let name = self.local_symbol_name(r);
+        let r = self.parse_external_symbol(symbol);
+        let name = self.original_symbol_name(r);
         self.current_bound_symbols.entry(name).or_default().push(r);
     }
 
     fn unbind_symbol(&mut self, symbol: &Symbol) {
         use std::collections::btree_map;
-        let r = Self::parse_symbol(symbol);
-        let name = self.local_symbol_name(r);
+        let r = self.parse_external_symbol(symbol);
+        let name = self.original_symbol_name(r);
         match self.current_bound_symbols.entry(name.clone()) {
             btree_map::Entry::Occupied(mut e) => {
                 if let Some(scope) = self.scopes.last() {
@@ -351,6 +435,21 @@ fn test_declare_datatypes_renaming() {
 
     let mut builder = SymbolNormalizer::<SyntaxBuilder>::default();
     assert_eq!(value2, value.accept(&mut builder).unwrap());
+
+    assert_eq!(
+        *builder
+            .max_local_symbols()
+            .get(&SymbolKind::Constructor)
+            .unwrap(),
+        4
+    );
+    assert_eq!(
+        *builder
+            .max_local_symbols()
+            .get(&SymbolKind::Selector)
+            .unwrap(),
+        5
+    );
 }
 
 #[test]
@@ -448,5 +547,55 @@ fn test_symbol_renaming() {
     assert_eq!(
         builder.global_symbols().into_iter().collect::<Vec<_>>(),
         vec!["=", "f", "x"]
+    );
+}
+
+#[test]
+fn test_random_renaming() {
+    use crate::{lexer::Lexer, parser::tests::parse_tokens};
+
+    let value = parse_tokens(Lexer::new(&b"
+(declare-datatypes (
+    (Type 0)
+    (TypeArray 0)
+)(
+    ((IntType) (VectorType (typeOfVectorType Type)) (StructType (nameOfStructType Name) (typesOfStructType TypeArray)))
+    ((TypeArray (valueOfTypeArray (Array Int Type)) (lengthOfTypeArray Int)))
+))"[..])).unwrap();
+    assert!(matches!(value, Command::DeclareDatatypes { .. }));
+
+    let value2 = parse_tokens(Lexer::new(
+        &b"
+(declare-datatypes (
+    (T5 0)
+    (T7 0)
+)(
+    ((c0) (c1 (s3 T5)) (c2 (s1 Name) (s0 T7)))
+    ((c3 (s2 (Array Int T5)) (s4 Int)))
+))"[..],
+    ))
+    .unwrap();
+
+    let mut config = SymbolNormalizerConfig::default();
+    config.randomization_space.insert(SymbolKind::Selector, 4);
+    config.randomization_space.insert(SymbolKind::Datatype, 12);
+    config.randomization_seed = 2;
+
+    let mut builder = SymbolNormalizer::new(SyntaxBuilder, config);
+    assert_eq!(value2, value.accept(&mut builder).unwrap());
+
+    assert_eq!(
+        *builder
+            .max_local_symbols()
+            .get(&SymbolKind::Constructor)
+            .unwrap(),
+        4
+    );
+    assert_eq!(
+        *builder
+            .max_local_symbols()
+            .get(&SymbolKind::Selector)
+            .unwrap(),
+        5
     );
 }

@@ -23,6 +23,9 @@ fst = "0.4.5"
 serde = { version = "1.0.125", features = ["derive"] }
 itertools = "0.10.0"
 thiserror = "1.0.25"
+rand = "0.8.0"
+permutation_iterator = "0.1.2"
+strum = { version = "0.21", features = ["derive"] }
 
 [[bin]]
 name = "smt2bin"
