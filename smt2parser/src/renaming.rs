@@ -6,7 +6,7 @@
 use crate::{
     concrete::*,
     rewriter::Rewriter,
-    visitors::{Identifier, Index, Smt2Visitor},
+    visitors::{Identifier, Index, Smt2Visitor, SymbolKind},
 };
 use num::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};
@@ -186,7 +186,7 @@ where
         self.process_symbol(value)
     }
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Result<Symbol, Error> {
+    fn visit_fresh_symbol(&mut self, value: String, _kind: SymbolKind) -> Result<Symbol, Error> {
         let s = Self::get_symbol(self.local_symbols.len());
         self.local_symbols.push(value);
         self.process_symbol(s)

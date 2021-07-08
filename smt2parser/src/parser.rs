@@ -93,7 +93,7 @@ pomelo! {
     %start_symbol command;
 
     bound_symbol ::= Symbol(s) { extra.0.visit_bound_symbol(s)? }
-    fresh_symbol ::= Symbol(s) { extra.0.visit_fresh_symbol(s)? }
+    fresh_symbol ::= Symbol(s) { extra.0.visit_fresh_symbol(s, crate::visitors::SymbolKind::Unknown)? }
     any_symbol ::= Symbol(s) { extra.0.visit_any_symbol(s)? }
     keyword ::= Keyword(s) { extra.0.visit_keyword(s)? }
 
@@ -207,7 +207,7 @@ pomelo! {
     prop_literals ::= prop_literals(mut xs) prop_literal(x) { xs.push(x); xs }
 
     // ⟨selector_dec⟩ ::= ( ⟨symbol⟩ ⟨sort⟩ )
-    selector_dec ::= LeftParen bound_symbol(x) sort(s) RightParen { (x, s) }
+    selector_dec ::= LeftParen fresh_symbol(x) sort(s) RightParen { (x, s) }
 
     selector_decs ::= selector_dec(x) { vec![x] }
     selector_decs ::= selector_decs(mut xs) selector_dec(x) { xs.push(x); xs }
@@ -318,7 +318,7 @@ pomelo! {
         }
     }
     //   ( define-sort ⟨symbol⟩ ( ⟨symbol⟩∗ ) ⟨sort⟩ )
-    command ::= LeftParen DefineSort fresh_symbol(x) LeftParen bound_symbols?(xs) RightParen sort(r) RightParen
+    command ::= LeftParen DefineSort fresh_symbol(x) LeftParen fresh_symbols?(xs) RightParen sort(r) RightParen
     {
         extra.0.visit_define_sort(x, xs.unwrap_or_else(Vec::new), r)?
     }

@@ -7,7 +7,7 @@ use crate::{
     lexer,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -242,7 +242,7 @@ impl SymbolVisitor for SyntaxBuilder {
     type T = Symbol;
     type E = Error;
 
-    fn visit_fresh_symbol(&mut self, value: String) -> Result<Self::T, Self::E> {
+    fn visit_fresh_symbol(&mut self, value: String, _kind: SymbolKind) -> Result<Self::T, Self::E> {
         Ok(Symbol(value))
     }
 }
@@ -516,7 +516,12 @@ impl Term {
             Let { var_bindings, term } => {
                 let bs = var_bindings
                     .into_iter()
-                    .map(|(s, t)| Ok((visitor.visit_fresh_symbol(s.0)?, t.accept(visitor)?)))
+                    .map(|(s, t)| {
+                        Ok((
+                            visitor.visit_fresh_symbol(s.0, SymbolKind::Variable)?,
+                            t.accept(visitor)?,
+                        ))
+                    })
                     .collect::<Result<Vec<_>, E>>()?;
                 bs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor)?;
@@ -526,7 +531,12 @@ impl Term {
             Forall { vars, term } => {
                 let vs = vars
                     .into_iter()
-                    .map(|(v, s)| Ok((visitor.visit_fresh_symbol(v.0)?, s.accept(visitor)?)))
+                    .map(|(v, s)| {
+                        Ok((
+                            visitor.visit_fresh_symbol(v.0, SymbolKind::Variable)?,
+                            s.accept(visitor)?,
+                        ))
+                    })
                     .collect::<Result<Vec<_>, E>>()?;
                 vs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor)?;
@@ -536,7 +546,12 @@ impl Term {
             Exists { vars, term } => {
                 let vs = vars
                     .into_iter()
-                    .map(|(v, s)| Ok((visitor.visit_fresh_symbol(v.0)?, s.accept(visitor)?)))
+                    .map(|(v, s)| {
+                        Ok((
+                            visitor.visit_fresh_symbol(v.0, SymbolKind::Variable)?,
+                            s.accept(visitor)?,
+                        ))
+                    })
                     .collect::<Result<Vec<_>, E>>()?;
                 vs.iter().for_each(|(s, _)| visitor.bind_symbol(s));
                 let t = term.accept(visitor)?;
@@ -556,14 +571,15 @@ impl Term {
                             symbols.push(visitor.visit_bound_symbol(s.0.clone()).or_else(
                                 |_| {
                                     has_fresh_first_symbol = true;
-                                    let s = visitor.visit_fresh_symbol(s.0.clone())?;
+                                    let s = visitor
+                                        .visit_fresh_symbol(s.0.clone(), SymbolKind::Variable)?;
                                     visitor.bind_symbol(&s);
                                     Ok(s)
                                 },
                             )?);
                         }
                         for s in ss {
-                            let s = visitor.visit_fresh_symbol(s.0)?;
+                            let s = visitor.visit_fresh_symbol(s.0, SymbolKind::Variable)?;
                             visitor.bind_symbol(&s);
                             symbols.push(s);
                         }
@@ -796,41 +812,34 @@ impl Command {
                 visitor.visit_check_sat_assuming(ls)
             }
             DeclareConst { symbol, sort } => {
-                let symb = visitor.visit_fresh_symbol(symbol.0)?;
+                let symb = visitor.visit_fresh_symbol(symbol.0, SymbolKind::Constant)?;
                 let sort = sort.accept(visitor)?;
                 visitor.bind_symbol(&symb);
                 visitor.visit_declare_const(symb, sort)
             }
             DeclareDatatype { symbol, datatype } => {
-                let s = visitor.visit_fresh_symbol(symbol.0)?;
+                let s = visitor.visit_fresh_symbol(symbol.0, SymbolKind::Datatype)?;
                 // Datatype may be recursive, so we bind the name early.
                 visitor.bind_symbol(&s);
-                // Note: we don't expect type parameters with declare-datatype but here
-                // we're going to handle them anyway.
                 let dt = datatype.remap(
                     visitor,
-                    |v, s| {
-                        let s = v.visit_fresh_symbol(s.0)?;
-                        // Bind type parameters for the selector. This works because `remap`
-                        // calls this closure first on all parameters.
-                        v.bind_symbol(&s);
-                        Ok(s)
-                    },
-                    |v, s| s.accept(v),
+                    |_, _| panic!("unexpected type parameters in DeclareDatatype"),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Constructor),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Selector),
+                    |v, sort| sort.accept(v),
                 )?;
-                // Unbind type parameters for the selector.
-                dt.parameters.iter().for_each(|s| visitor.unbind_symbol(s));
-                // Bind constructor symbols.
-                dt.constructors
-                    .iter()
-                    .for_each(|c| visitor.bind_symbol(&c.symbol));
+                // Bind constructor symbols and selectors.
+                dt.constructors.iter().for_each(|c| {
+                    visitor.bind_symbol(&c.symbol);
+                    c.selectors.iter().for_each(|(s, _)| visitor.bind_symbol(s));
+                });
                 visitor.visit_declare_datatype(s, dt)
             }
             DeclareDatatypes { datatypes } => {
                 let dts = datatypes
                     .into_iter()
                     .map(|(s, n, dt)| {
-                        let s = visitor.visit_fresh_symbol(s.0)?;
+                        let s = visitor.visit_fresh_symbol(s.0, SymbolKind::Datatype)?;
                         // Datatype may be recursive, so we bind the names early.
                         visitor.bind_symbol(&s);
                         Ok((s, n, dt))
@@ -842,19 +851,22 @@ impl Command {
                         let dt = dt.remap(
                             visitor,
                             |v, s| {
-                                // Bind type parameters for the selector.
-                                let s = v.visit_fresh_symbol(s.0)?;
+                                // Bind type parameters before visiting sorts.
+                                let s = v.visit_fresh_symbol(s.0, SymbolKind::TypeVar)?;
                                 v.bind_symbol(&s);
                                 Ok(s)
                             },
-                            |v, s| s.accept(v),
+                            |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Constructor),
+                            |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Selector),
+                            |v, sort| sort.accept(v),
                         )?;
-                        // Unbind type parameters for the selector.
+                        // Unbind type parameters.
                         dt.parameters.iter().for_each(|s| visitor.unbind_symbol(s));
-                        // Bind constructor symbols.
-                        dt.constructors
-                            .iter()
-                            .for_each(|c| visitor.bind_symbol(&c.symbol));
+                        // Bind constructor symbols and selectors.
+                        dt.constructors.iter().for_each(|c| {
+                            visitor.bind_symbol(&c.symbol);
+                            c.selectors.iter().for_each(|(s, _)| visitor.bind_symbol(s));
+                        });
                         Ok((s, n, dt))
                     })
                     .collect::<Result<_, E>>()?;
@@ -865,7 +877,7 @@ impl Command {
                 parameters,
                 sort,
             } => {
-                let symb = visitor.visit_fresh_symbol(symbol.0)?;
+                let symb = visitor.visit_fresh_symbol(symbol.0, SymbolKind::Function)?;
                 let ps = parameters
                     .into_iter()
                     .map(|s| s.accept(visitor))
@@ -875,14 +887,15 @@ impl Command {
                 visitor.visit_declare_fun(symb, ps, sort)
             }
             DeclareSort { symbol, arity } => {
-                let s = visitor.visit_fresh_symbol(symbol.0)?;
+                let s = visitor.visit_fresh_symbol(symbol.0, SymbolKind::Sort)?;
                 visitor.bind_symbol(&s);
                 visitor.visit_declare_sort(s, arity)
             }
             DefineFun { sig, term } => {
                 let sig = sig.remap(
                     visitor,
-                    |v, s| v.visit_fresh_symbol(s.0),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Function),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Variable),
                     |v, s| s.accept(v),
                 )?;
                 sig.parameters
@@ -898,7 +911,8 @@ impl Command {
             DefineFunRec { sig, term } => {
                 let sig = sig.remap(
                     visitor,
-                    |v, s| v.visit_fresh_symbol(s.0),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Function),
+                    |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Variable),
                     |v, s| s.accept(v),
                 )?;
                 visitor.bind_symbol(&sig.name);
@@ -917,7 +931,8 @@ impl Command {
                     .map(|(sig, t)| {
                         let sig = sig.remap(
                             visitor,
-                            |v, s| v.visit_fresh_symbol(s.0),
+                            |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Function),
+                            |v, s| v.visit_fresh_symbol(s.0, SymbolKind::Variable),
                             |v, s| s.accept(v),
                         )?;
                         visitor.bind_symbol(&sig.name);
@@ -944,10 +959,10 @@ impl Command {
                 parameters,
                 sort,
             } => {
-                let symbol = visitor.visit_fresh_symbol(symbol.0)?;
+                let symbol = visitor.visit_fresh_symbol(symbol.0, SymbolKind::Sort)?;
                 let ps = parameters
                     .into_iter()
-                    .map(|s| visitor.visit_fresh_symbol(s.0))
+                    .map(|s| visitor.visit_fresh_symbol(s.0, SymbolKind::TypeVar))
                     .collect::<Result<Vec<_>, E>>()?;
                 ps.iter().for_each(|s| visitor.bind_symbol(s));
                 let sort = sort.accept(visitor)?;

@@ -7,7 +7,7 @@ use crate::{
     concrete::Error,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        Smt2Visitor, SortVisitor, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -165,7 +165,11 @@ impl SymbolVisitor for Smt2Counters {
     type T = ();
     type E = Error;
 
-    fn visit_fresh_symbol(&mut self, _value: String) -> Result<Self::T, Self::E> {
+    fn visit_fresh_symbol(
+        &mut self,
+        _value: String,
+        _kind: SymbolKind,
+    ) -> Result<Self::T, Self::E> {
         self.fresh_symbol_count += 1;
         Ok(())
     }
