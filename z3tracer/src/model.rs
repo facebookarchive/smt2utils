@@ -173,9 +173,9 @@ pub struct PendingQiInstance {
 /// Quantifier instantiation data.
 #[derive(Clone, Debug)]
 pub struct QuantInstantiation {
-    /// Main declaration as returned by [new-match] or [inst-discovered] logs.
+    /// Main declaration as returned by `[new-match]` or `[inst-discovered]` logs.
     pub frame: QiFrame,
-    /// Corresponding "instance" data collected between [instance] and [end-instance] logs.
+    /// Corresponding "instance" data collected between `[instance]` and `[end-instance]` logs.
     pub instances: Vec<QiInstance>,
     /// Dependencies to QI keys (see ScopedTermData).
     pub qi_deps: BTreeSet<QiRef>,

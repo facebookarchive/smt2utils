@@ -81,7 +81,7 @@ pub struct VarName {
     pub sort: Symbol,
 }
 
-/// A quantifier instantiation as declared by [inst-discovered] or [new-match].
+/// A quantifier instantiation as declared by `[inst-discovered]` or `[new-match]`.
 #[derive(Clone, Debug)]
 pub enum QiFrame {
     Discovered {
@@ -132,7 +132,7 @@ impl QiFrame {
 }
 
 /// Data specific to an instance of a quantifier instantiation (i.e. gathered
-/// between [instance] and [end-instance]).
+/// between `[instance]` and `[end-instance]`).
 #[derive(Clone, Debug)]
 pub struct QiInstance {
     pub generation: Option<u64>,
