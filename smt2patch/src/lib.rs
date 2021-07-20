@@ -1,7 +1,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! The `stm2patch` library provides the SMT2 "patching" functionalities and
+//! The `smt2patch` library provides the SMT2 "patching" functionalities and
 //! configurations used by the binary tool `smt2patch`.
 
 use smt2parser::{

@@ -9,7 +9,7 @@
   commands before there are send to an SMT solver. It acts as a command-line replacement
   for the SMT solver binary. Currently, only Z3 is supported.
 
-The `stm2proxy` library provides the command processing functionalities and
+The `smt2proxy` library provides the command processing functionalities and
 configurations used by the binary tool `smt2proxy`.
 
 ## Contributing

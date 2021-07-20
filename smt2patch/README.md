@@ -7,7 +7,7 @@
 
 `smt2patch` is an experimental binary tool to modify SMT2 files.
 
-The `stm2patch` library provides the SMT2 "patching" functionalities and
+The `smt2patch` library provides the SMT2 "patching" functionalities and
 configurations used by the binary tool `smt2patch`.
 
 ## Contributing
