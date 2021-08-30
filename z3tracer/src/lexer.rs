@@ -135,7 +135,7 @@ where
                 self.skip_spaces();
                 break;
             }
-            if c == b'\n' || c == b'#' || c == b';' || c == b'(' || c == b')' {
+            if c == b'\n' || c == b';' || c == b'(' || c == b')' {
                 break;
             }
             bytes.push(c);
