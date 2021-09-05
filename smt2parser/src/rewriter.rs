@@ -6,10 +6,10 @@
 //! Rewriting of Smt2 values
 
 use crate::{
+    concrete::{AttributeValue, DatatypeDec, FunctionDec, Identifier},
     visitors::{
-        AttributeValue, CommandVisitor, ConstantVisitor, DatatypeDec, FunctionDec, Identifier,
-        KeywordVisitor, QualIdentifierVisitor, SExprVisitor, Smt2Visitor, SortVisitor, SymbolKind,
-        SymbolVisitor, TermVisitor,
+        CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
+        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };

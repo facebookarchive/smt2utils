@@ -3,7 +3,10 @@
 
 //! The visiting traits expected by the SMT2 parser.
 
-use crate::{Binary, Decimal, Hexadecimal, Numeral};
+use crate::{
+    concrete::{AttributeValue, DatatypeDec, FunctionDec, Identifier},
+    Binary, Decimal, Hexadecimal, Numeral,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
@@ -70,59 +73,6 @@ pub trait SExprVisitor<Constant, Symbol, Keyword> {
     fn visit_application_s_expr(&mut self, values: Vec<Self::T>) -> Result<Self::T, Self::E>;
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Index<Symbol> {
-    Numeral(Numeral),
-    Symbol(Symbol),
-}
-
-impl<S> Index<S> {
-    /// Remap the symbols of an Index value.
-    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Index<T>, E>
-    where
-        F: Copy + Fn(&mut V, S) -> Result<T, E>,
-    {
-        use Index::*;
-        match self {
-            Numeral(n) => Ok(Numeral(n)),
-            Symbol(s) => Ok(Symbol(f(v, s)?)),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Identifier<Symbol> {
-    Simple {
-        symbol: Symbol,
-    },
-    Indexed {
-        symbol: Symbol,
-        indices: Vec<Index<Symbol>>,
-    },
-}
-
-impl<S> Identifier<S> {
-    /// Remap the symbols of an Identifier value.
-    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Identifier<T>, E>
-    where
-        F: Copy + Fn(&mut V, S) -> Result<T, E>,
-    {
-        use Identifier::*;
-        match self {
-            Simple { symbol } => Ok(Simple {
-                symbol: f(v, symbol)?,
-            }),
-            Indexed { symbol, indices } => Ok(Indexed {
-                symbol: f(v, symbol)?,
-                indices: indices
-                    .into_iter()
-                    .map(|i| i.remap(v, f))
-                    .collect::<Result<_, E>>()?,
-            }),
-        }
-    }
-}
-
 pub trait SortVisitor<Symbol> {
     type T;
     type E;
@@ -145,44 +95,6 @@ pub trait QualIdentifierVisitor<Identifier, Sort> {
         identifier: Identifier,
         sort: Sort,
     ) -> Result<Self::T, Self::E>;
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum AttributeValue<Constant, Symbol, SExpr> {
-    None,
-    Constant(Constant),
-    Symbol(Symbol),
-    SExpr(Vec<SExpr>),
-}
-
-impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
-    /// Remap the generically-typed values of an AttributeValue.
-    pub(crate) fn remap<V, F1, F2, F3, R1, R2, R3, E>(
-        self,
-        v: &mut V,
-        fcst: F1,
-        fsym: F2,
-        fsexp: F3,
-    ) -> Result<AttributeValue<R1, R2, R3>, E>
-    where
-        F1: Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Fn(&mut V, T2) -> Result<R2, E>,
-        F3: Fn(&mut V, T3) -> Result<R3, E>,
-    {
-        use AttributeValue::*;
-        let value = match self {
-            None => None,
-            Constant(value) => Constant(fcst(v, value)?),
-            Symbol(value) => Symbol(fsym(v, value)?),
-            SExpr(values) => SExpr(
-                values
-                    .into_iter()
-                    .map(|x| fsexp(v, x))
-                    .collect::<Result<_, E>>()?,
-            ),
-        };
-        Ok(value)
-    }
 }
 
 pub trait TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> {
@@ -261,76 +173,6 @@ impl<T1, T2> ConstructorDec<T1, T2> {
                 .into_iter()
                 .map(|(s1, s2)| Ok((fsel(v, s1)?, fsort(v, s2)?)))
                 .collect::<Result<_, E>>()?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct DatatypeDec<Symbol, Sort> {
-    pub parameters: Vec<Symbol>,
-    pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
-}
-
-impl<T1, T2> DatatypeDec<T1, T2> {
-    /// Remap the generically-typed values of a DatatypeDec value.
-    pub(crate) fn remap<V, F1, F2, F3, F4, R1, R2, E>(
-        self,
-        v: &mut V,
-        fpar: F1,
-        fcons: F2,
-        fsel: F3,
-        fsort: F4,
-    ) -> Result<DatatypeDec<R1, R2>, E>
-    where
-        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F3: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F4: Copy + Fn(&mut V, T2) -> Result<R2, E>,
-    {
-        Ok(DatatypeDec {
-            parameters: self
-                .parameters
-                .into_iter()
-                .map(|x| fpar(v, x))
-                .collect::<Result<_, E>>()?,
-            constructors: self
-                .constructors
-                .into_iter()
-                .map(|c| c.remap(v, fcons, fsel, fsort))
-                .collect::<Result<_, E>>()?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct FunctionDec<Symbol, Sort> {
-    pub name: Symbol,
-    pub parameters: Vec<(Symbol, Sort)>,
-    pub result: Sort,
-}
-
-impl<T1, T2> FunctionDec<T1, T2> {
-    /// Remap the generically-typed values of a FunctionDec value.
-    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
-        self,
-        v: &mut V,
-        ffun: F1,
-        fvar: F2,
-        fsort: F3,
-    ) -> Result<FunctionDec<R1, R2>, E>
-    where
-        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F3: Copy + Fn(&mut V, T2) -> Result<R2, E>,
-    {
-        Ok(FunctionDec {
-            name: ffun(v, self.name)?,
-            parameters: self
-                .parameters
-                .into_iter()
-                .map(|(s1, s2)| Ok((fvar(v, s1)?, fsort(v, s2)?)))
-                .collect::<Result<_, E>>()?,
-            result: fsort(v, self.result)?,
         })
     }
 }
@@ -491,52 +333,6 @@ pub trait Smt2Visitor:
 
     fn syntax_error(&mut self, position: crate::Position, s: String) -> Self::Error;
     fn parsing_error(&mut self, position: crate::Position, s: String) -> Self::Error;
-}
-
-impl<Symbol> std::fmt::Display for Index<Symbol>
-where
-    Symbol: std::fmt::Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // ⟨numeral⟩ | ⟨symbol⟩
-        match self {
-            Index::Numeral(num) => write!(f, "{}", num),
-            Index::Symbol(sym) => write!(f, "{}", sym),
-        }
-    }
-}
-
-impl<Symbol> std::fmt::Display for Identifier<Symbol>
-where
-    Symbol: std::fmt::Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
-        match self {
-            Identifier::Simple { symbol } => write!(f, "{}", symbol),
-            Identifier::Indexed { symbol, indices } => {
-                write!(f, "(_ {} {})", symbol, indices.iter().format(" "))
-            }
-        }
-    }
-}
-
-impl<Constant, Symbol, SExpr> std::fmt::Display for AttributeValue<Constant, Symbol, SExpr>
-where
-    Constant: std::fmt::Display,
-    Symbol: std::fmt::Display,
-    SExpr: std::fmt::Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // ⟨spec_constant⟩ | ⟨symbol⟩ | ( ⟨s_expr⟩∗ ) |
-        use AttributeValue::*;
-        match self {
-            None => Ok(()),
-            Constant(c) => write!(f, "{}", c),
-            Symbol(s) => write!(f, "{}", s),
-            SExpr(values) => write!(f, "({})", values.iter().format(" ")),
-        }
-    }
 }
 
 impl<Symbol, Sort> std::fmt::Display for ConstructorDec<Symbol, Sort>

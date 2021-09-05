@@ -6,8 +6,8 @@
 use crate::{
     lexer,
     visitors::{
-        CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
+        CommandVisitor, ConstantVisitor, ConstructorDec, KeywordVisitor, QualIdentifierVisitor,
+        SExprVisitor, Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -33,78 +33,244 @@ pub struct Symbol(pub String);
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Keyword(pub String);
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub enum Index<Symbol = self::Symbol> {
+    Numeral(Numeral),
+    Symbol(Symbol),
+}
+
+impl<S> Index<S> {
+    /// Remap the symbols of an Index value.
+    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Index<T>, E>
+    where
+        F: Copy + Fn(&mut V, S) -> Result<T, E>,
+    {
+        use Index::*;
+        match self {
+            Numeral(n) => Ok(Numeral(n)),
+            Symbol(s) => Ok(Symbol(f(v, s)?)),
+        }
+    }
+}
+
 /// Concrete identifier.
-pub type Identifier = crate::visitors::Identifier<Symbol>;
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub enum Identifier<Symbol = self::Symbol> {
+    Simple {
+        symbol: Symbol,
+    },
+    Indexed {
+        symbol: Symbol,
+        indices: Vec<Index<Symbol>>,
+    },
+}
+
+impl<S> Identifier<S> {
+    /// Remap the symbols of an Identifier value.
+    pub(crate) fn remap<F, V, T, E>(self, v: &mut V, f: F) -> Result<Identifier<T>, E>
+    where
+        F: Copy + Fn(&mut V, S) -> Result<T, E>,
+    {
+        use Identifier::*;
+        match self {
+            Simple { symbol } => Ok(Simple {
+                symbol: f(v, symbol)?,
+            }),
+            Indexed { symbol, indices } => Ok(Indexed {
+                symbol: f(v, symbol)?,
+                indices: indices
+                    .into_iter()
+                    .map(|i| i.remap(v, f))
+                    .collect::<Result<_, E>>()?,
+            }),
+        }
+    }
+}
 
 /// Concrete syntax for an S-expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum SExpr {
+pub enum SExpr<Constant = self::Constant, Symbol = self::Symbol, Keyword = self::Keyword> {
     Constant(Constant),
     Symbol(Symbol),
     Keyword(Keyword),
-    Application(Vec<SExpr>),
+    Application(Vec<Self>),
 }
 
-/// Concrete [`crate::visitors::AttributeValue`].
-pub type AttributeValue = crate::visitors::AttributeValue<Constant, Symbol, SExpr>;
-/// Concrete [`crate::visitors::DatatypeDec`].
-pub type DatatypeDec = crate::visitors::DatatypeDec<Symbol, Sort>;
-/// Concrete [`crate::visitors::FunctionDec`].
-pub type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub enum AttributeValue<Constant = self::Constant, Symbol = self::Symbol, SExpr = self::SExpr> {
+    None,
+    Constant(Constant),
+    Symbol(Symbol),
+    SExpr(Vec<SExpr>),
+}
+
+impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
+    /// Remap the generically-typed values of an AttributeValue.
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, R3, E>(
+        self,
+        v: &mut V,
+        fcst: F1,
+        fsym: F2,
+        fsexp: F3,
+    ) -> Result<AttributeValue<R1, R2, R3>, E>
+    where
+        F1: Fn(&mut V, T1) -> Result<R1, E>,
+        F2: Fn(&mut V, T2) -> Result<R2, E>,
+        F3: Fn(&mut V, T3) -> Result<R3, E>,
+    {
+        use AttributeValue::*;
+        let value = match self {
+            None => None,
+            Constant(value) => Constant(fcst(v, value)?),
+            Symbol(value) => Symbol(fsym(v, value)?),
+            SExpr(values) => SExpr(
+                values
+                    .into_iter()
+                    .map(|x| fsexp(v, x))
+                    .collect::<Result<_, E>>()?,
+            ),
+        };
+        Ok(value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub struct DatatypeDec<Symbol = self::Symbol, Sort = self::Sort> {
+    pub parameters: Vec<Symbol>,
+    pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
+}
+
+impl<T1, T2> DatatypeDec<T1, T2> {
+    /// Remap the generically-typed values of a DatatypeDec value.
+    pub(crate) fn remap<V, F1, F2, F3, F4, R1, R2, E>(
+        self,
+        v: &mut V,
+        fpar: F1,
+        fcons: F2,
+        fsel: F3,
+        fsort: F4,
+    ) -> Result<DatatypeDec<R1, R2>, E>
+    where
+        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F4: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+    {
+        Ok(DatatypeDec {
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|x| fpar(v, x))
+                .collect::<Result<_, E>>()?,
+            constructors: self
+                .constructors
+                .into_iter()
+                .map(|c| c.remap(v, fcons, fsel, fsort))
+                .collect::<Result<_, E>>()?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub struct FunctionDec<Symbol = self::Symbol, Sort = self::Sort> {
+    pub name: Symbol,
+    pub parameters: Vec<(Symbol, Sort)>,
+    pub result: Sort,
+}
+
+impl<T1, T2> FunctionDec<T1, T2> {
+    /// Remap the generically-typed values of a FunctionDec value.
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
+        self,
+        v: &mut V,
+        ffun: F1,
+        fvar: F2,
+        fsort: F3,
+    ) -> Result<FunctionDec<R1, R2>, E>
+    where
+        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+    {
+        Ok(FunctionDec {
+            name: ffun(v, self.name)?,
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|(s1, s2)| Ok((fvar(v, s1)?, fsort(v, s2)?)))
+                .collect::<Result<_, E>>()?,
+            result: fsort(v, self.result)?,
+        })
+    }
+}
 
 /// Concrete syntax for a sort.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Sort {
+pub enum Sort<Identifier = self::Identifier> {
     Simple {
         identifier: Identifier,
     },
     Parameterized {
         identifier: Identifier,
-        parameters: Vec<Sort>,
+        parameters: Vec<Self>,
     },
 }
 
 /// Concrete syntax for a qualified-identifier.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum QualIdentifier {
+pub enum QualIdentifier<Identifier = self::Identifier, Sort = self::Sort> {
     Simple { identifier: Identifier },
     Sorted { identifier: Identifier, sort: Sort },
 }
 
 /// Concrete syntax for a term.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Term {
+pub enum Term<
+    Constant = self::Constant,
+    QualIdentifier = self::QualIdentifier,
+    Keyword = self::Keyword,
+    SExpr = self::SExpr,
+    Symbol = self::Symbol,
+    Sort = self::Sort,
+> {
     Constant(Constant),
     QualIdentifier(QualIdentifier),
     Application {
         qual_identifier: QualIdentifier,
-        arguments: Vec<Term>,
+        arguments: Vec<Self>,
     },
     Let {
-        var_bindings: Vec<(Symbol, Term)>,
-        term: Box<Term>,
+        var_bindings: Vec<(Symbol, Self)>,
+        term: Box<Self>,
     },
     Forall {
         vars: Vec<(Symbol, Sort)>,
-        term: Box<Term>,
+        term: Box<Self>,
     },
     Exists {
         vars: Vec<(Symbol, Sort)>,
-        term: Box<Term>,
+        term: Box<Self>,
     },
     Match {
-        term: Box<Term>,
-        cases: Vec<(Vec<Symbol>, Term)>,
+        term: Box<Self>,
+        cases: Vec<(Vec<Symbol>, Self)>,
     },
     Attributes {
-        term: Box<Term>,
-        attributes: Vec<(Keyword, AttributeValue)>,
+        term: Box<Self>,
+        attributes: Vec<(Keyword, AttributeValue<Constant, Symbol, SExpr>)>,
     },
 }
 
 /// Concrete syntax for a command.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Command {
+pub enum Command<
+    Term = self::Term,
+    Symbol = self::Symbol,
+    Sort = self::Sort,
+    Keyword = self::Keyword,
+    Constant = self::Constant,
+    SExpr = self::SExpr,
+> {
     Assert {
         term: Term,
     },
@@ -118,10 +284,10 @@ pub enum Command {
     },
     DeclareDatatype {
         symbol: Symbol,
-        datatype: DatatypeDec,
+        datatype: DatatypeDec<Symbol, Sort>,
     },
     DeclareDatatypes {
-        datatypes: Vec<(Symbol, Numeral, DatatypeDec)>,
+        datatypes: Vec<(Symbol, Numeral, DatatypeDec<Symbol, Sort>)>,
     },
     DeclareFun {
         symbol: Symbol,
@@ -133,15 +299,15 @@ pub enum Command {
         arity: Numeral,
     },
     DefineFun {
-        sig: FunctionDec,
+        sig: FunctionDec<Symbol, Sort>,
         term: Term,
     },
     DefineFunRec {
-        sig: FunctionDec,
+        sig: FunctionDec<Symbol, Sort>,
         term: Term,
     },
     DefineFunsRec {
-        funs: Vec<(FunctionDec, Term)>,
+        funs: Vec<(FunctionDec<Symbol, Sort>, Term)>,
     },
     DefineSort {
         symbol: Symbol,
@@ -177,14 +343,14 @@ pub enum Command {
     ResetAssertions,
     SetInfo {
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     },
     SetLogic {
         symbol: Symbol,
     },
     SetOption {
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     },
 }
 
@@ -266,8 +432,8 @@ impl Keyword {
     }
 }
 
-impl SExprVisitor<Constant, Symbol, Keyword> for SyntaxBuilder {
-    type T = SExpr;
+impl<Constant, Symbol, Keyword> SExprVisitor<Constant, Symbol, Keyword> for SyntaxBuilder {
+    type T = SExpr<Constant, Symbol, Keyword>;
     type E = Error;
 
     fn visit_constant_s_expr(&mut self, value: Constant) -> Result<Self::T, Self::E> {
@@ -321,17 +487,17 @@ impl SExpr {
     }
 }
 
-impl SortVisitor<Symbol> for SyntaxBuilder {
-    type T = Sort;
+impl<Symbol> SortVisitor<Symbol> for SyntaxBuilder {
+    type T = Sort<Identifier<Symbol>>;
     type E = Error;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier) -> Result<Self::T, Self::E> {
+    fn visit_simple_sort(&mut self, identifier: Identifier<Symbol>) -> Result<Self::T, Self::E> {
         Ok(Sort::Simple { identifier })
     }
 
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier,
+        identifier: Identifier<Symbol>,
         parameters: Vec<Self::T>,
     ) -> Result<Self::T, Self::E> {
         Ok(Sort::Parameterized {
@@ -368,8 +534,8 @@ impl Sort {
     }
 }
 
-impl QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
-    type T = QualIdentifier;
+impl<Identifier, Sort> QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
+    type T = QualIdentifier<Identifier, Sort>;
     type E = Error;
 
     fn visit_simple_identifier(&mut self, identifier: Identifier) -> Result<Self::T, Self::E> {
@@ -391,7 +557,7 @@ impl QualIdentifier {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = T, E = E>,
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = T, E = E>,
     {
         use QualIdentifier::*;
         match self {
@@ -408,8 +574,10 @@ impl QualIdentifier {
     }
 }
 
-impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for SyntaxBuilder {
-    type T = Term;
+impl<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>
+    TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for SyntaxBuilder
+{
+    type T = Term<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>;
     type E = Error;
 
     fn visit_constant(&mut self, constant: Constant) -> Result<Self::T, Self::E> {
@@ -473,7 +641,7 @@ impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for Syn
     fn visit_attributes(
         &mut self,
         term: Self::T,
-        attributes: Vec<(Keyword, AttributeValue)>,
+        attributes: Vec<(Keyword, AttributeValue<Constant, Symbol, SExpr>)>,
     ) -> Result<Self::T, Self::E> {
         let term = Box::new(term);
         Ok(Term::Attributes { term, attributes })
@@ -486,7 +654,7 @@ impl Term {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
@@ -620,8 +788,10 @@ impl Term {
     }
 }
 
-impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuilder {
-    type T = Command;
+impl<Term, Symbol, Sort, Keyword, Constant, SExpr>
+    CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuilder
+{
+    type T = Command<Term, Symbol, Sort, Keyword, Constant, SExpr>;
     type E = Error;
 
     fn visit_assert(&mut self, term: Term) -> Result<Self::T, Self::E> {
@@ -646,14 +816,14 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_declare_datatype(
         &mut self,
         symbol: Symbol,
-        datatype: DatatypeDec,
+        datatype: DatatypeDec<Symbol, Sort>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DeclareDatatype { symbol, datatype })
     }
 
     fn visit_declare_datatypes(
         &mut self,
-        datatypes: Vec<(Symbol, Numeral, DatatypeDec)>,
+        datatypes: Vec<(Symbol, Numeral, DatatypeDec<Symbol, Sort>)>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DeclareDatatypes { datatypes })
     }
@@ -675,17 +845,25 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
         Ok(Command::DeclareSort { symbol, arity })
     }
 
-    fn visit_define_fun(&mut self, sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
+    fn visit_define_fun(
+        &mut self,
+        sig: FunctionDec<Symbol, Sort>,
+        term: Term,
+    ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFun { sig, term })
     }
 
-    fn visit_define_fun_rec(&mut self, sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
+    fn visit_define_fun_rec(
+        &mut self,
+        sig: FunctionDec<Symbol, Sort>,
+        term: Term,
+    ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFunRec { sig, term })
     }
 
     fn visit_define_funs_rec(
         &mut self,
-        funs: Vec<(FunctionDec, Term)>,
+        funs: Vec<(FunctionDec<Symbol, Sort>, Term)>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFunsRec { funs })
     }
@@ -766,7 +944,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_set_info(
         &mut self,
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::SetInfo { keyword, value })
     }
@@ -778,7 +956,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_set_option(
         &mut self,
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::SetOption { keyword, value })
     }
@@ -790,7 +968,7 @@ impl Command {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
@@ -1107,7 +1285,12 @@ impl std::fmt::Display for Keyword {
     }
 }
 
-impl std::fmt::Display for SExpr {
+impl<T1, T2, T3> std::fmt::Display for SExpr<T1, T2, T3>
+where
+    T1: std::fmt::Display,
+    T2: std::fmt::Display,
+    T3: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨spec_constant⟩ | ⟨symbol⟩ | ⟨keyword⟩ | ( ⟨s_expr⟩∗ )
         use SExpr::*;
@@ -1120,7 +1303,56 @@ impl std::fmt::Display for SExpr {
     }
 }
 
-impl std::fmt::Display for Sort {
+impl<Symbol> std::fmt::Display for Index<Symbol>
+where
+    Symbol: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // ⟨numeral⟩ | ⟨symbol⟩
+        match self {
+            Index::Numeral(num) => write!(f, "{}", num),
+            Index::Symbol(sym) => write!(f, "{}", sym),
+        }
+    }
+}
+
+impl<Symbol> std::fmt::Display for Identifier<Symbol>
+where
+    Symbol: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
+        match self {
+            Identifier::Simple { symbol } => write!(f, "{}", symbol),
+            Identifier::Indexed { symbol, indices } => {
+                write!(f, "(_ {} {})", symbol, indices.iter().format(" "))
+            }
+        }
+    }
+}
+
+impl<Constant, Symbol, SExpr> std::fmt::Display for AttributeValue<Constant, Symbol, SExpr>
+where
+    Constant: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    SExpr: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // ⟨spec_constant⟩ | ⟨symbol⟩ | ( ⟨s_expr⟩∗ ) |
+        use AttributeValue::*;
+        match self {
+            None => Ok(()),
+            Constant(c) => write!(f, "{}", c),
+            Symbol(s) => write!(f, "{}", s),
+            SExpr(values) => write!(f, "({})", values.iter().format(" ")),
+        }
+    }
+}
+
+impl<Identifier> std::fmt::Display for Sort<Identifier>
+where
+    Identifier: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨identifier⟩ | ( ⟨identifier⟩ ⟨sort⟩+ )
         use Sort::*;
@@ -1134,7 +1366,10 @@ impl std::fmt::Display for Sort {
     }
 }
 
-impl std::fmt::Display for QualIdentifier {
+impl<Identifier> std::fmt::Display for QualIdentifier<Identifier>
+where
+    Identifier: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨identifier⟩ | ( as ⟨identifier⟩ ⟨sort⟩ )
         use QualIdentifier::*;
@@ -1145,7 +1380,15 @@ impl std::fmt::Display for QualIdentifier {
     }
 }
 
-impl std::fmt::Display for Term {
+impl<T1, T2, T3, T4, T5, T6> std::fmt::Display for Term<T1, T2, T3, T4, T5, T6>
+where
+    T1: std::fmt::Display,
+    T2: std::fmt::Display,
+    T3: std::fmt::Display,
+    T4: std::fmt::Display,
+    T5: std::fmt::Display,
+    T6: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Term::*;
         match self {
@@ -1228,7 +1471,15 @@ impl std::fmt::Display for Term {
     }
 }
 
-impl std::fmt::Display for Command {
+impl<T1, T2, T3, T4, T5, T6> std::fmt::Display for Command<T1, T2, T3, T4, T5, T6>
+where
+    T1: std::fmt::Display,
+    T2: std::fmt::Display,
+    T3: std::fmt::Display,
+    T4: std::fmt::Display,
+    T5: std::fmt::Display,
+    T6: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
         match self {

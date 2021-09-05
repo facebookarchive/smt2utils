@@ -10,7 +10,7 @@ pub use internal::{Parser, Token};
 
 pomelo! {
     %module internal;
-    %include { use crate::visitors; }
+    %include { use crate::{concrete, visitors}; }
 
     %stack_size 0;
 
@@ -39,7 +39,7 @@ pomelo! {
 
     %type constant T::Constant;
     %type qual_identifier T::QualIdentifier;
-    %type identifier visitors::Identifier<T::Symbol>;
+    %type identifier concrete::Identifier<T::Symbol>;
 
     %type bound_symbol T::Symbol;
     %type fresh_symbol T::Symbol;
@@ -53,14 +53,14 @@ pomelo! {
     %type sort T::Sort;
     %type sorts Vec<T::Sort>;
 
-    %type attribute_value visitors::AttributeValue<T::Constant, T::Symbol, T::SExpr>;
-    %type attributes Vec<(T::Keyword, visitors::AttributeValue<T::Constant, T::Symbol, T::SExpr>)>;
+    %type attribute_value concrete::AttributeValue<T::Constant, T::Symbol, T::SExpr>;
+    %type attributes Vec<(T::Keyword, concrete::AttributeValue<T::Constant, T::Symbol, T::SExpr>)>;
 
     %type s_expr T::SExpr;
     %type s_exprs Vec<T::SExpr>;
 
-    %type index visitors::Index<T::Symbol>;
-    %type indices Vec<visitors::Index<T::Symbol>>;
+    %type index concrete::Index<T::Symbol>;
+    %type indices Vec<concrete::Index<T::Symbol>>;
 
     %type var_binding (T::Symbol, T::Term);
     %type var_bindings Vec<(T::Symbol, T::Term)>;
@@ -74,8 +74,8 @@ pomelo! {
     %type prop_literal (T::Symbol, bool);
     %type prop_literals Vec<(T::Symbol, bool)>;
 
-    %type datatype_dec visitors::DatatypeDec<T::Symbol, T::Sort>;
-    %type datatype_decs Vec<visitors::DatatypeDec<T::Symbol, T::Sort>>;
+    %type datatype_dec concrete::DatatypeDec<T::Symbol, T::Sort>;
+    %type datatype_decs Vec<concrete::DatatypeDec<T::Symbol, T::Sort>>;
 
     %type selector_dec (T::Symbol, T::Sort);
     %type selector_decs Vec<(T::Symbol, T::Sort)>;
@@ -83,8 +83,8 @@ pomelo! {
     %type constructor_dec visitors::ConstructorDec<T::Symbol, T::Sort>;
     %type constructor_decs Vec<visitors::ConstructorDec<T::Symbol, T::Sort>>;
 
-    %type function_dec visitors::FunctionDec<T::Symbol, T::Sort>;
-    %type function_decs Vec<visitors::FunctionDec<T::Symbol, T::Sort>>;
+    %type function_dec concrete::FunctionDec<T::Symbol, T::Sort>;
+    %type function_decs Vec<concrete::FunctionDec<T::Symbol, T::Sort>>;
 
     %type sort_dec (T::Symbol, crate::Numeral);
     %type sort_decs Vec<(T::Symbol, crate::Numeral)>;
@@ -102,10 +102,10 @@ pomelo! {
     pattern_symbols ::= fresh_symbols(mut xs) fresh_symbol(x) { xs.push(x); xs }
 
     // attribute_value ::= ⟨spec_constant⟩ | ⟨symbol⟩ | ( ⟨s_expr⟩∗ ) |
-    attribute_value ::= constant(x) { visitors::AttributeValue::Constant(x) }
-    attribute_value ::= bound_symbol(x) { visitors::AttributeValue::Symbol(x) }
-    attribute_value ::= LeftParen s_exprs?(xs) RightParen { visitors::AttributeValue::SExpr(xs.unwrap_or_else(Vec::new)) }
-    attribute_value ::= { visitors::AttributeValue::None }
+    attribute_value ::= constant(x) { concrete::AttributeValue::Constant(x) }
+    attribute_value ::= bound_symbol(x) { concrete::AttributeValue::Symbol(x) }
+    attribute_value ::= LeftParen s_exprs?(xs) RightParen { concrete::AttributeValue::SExpr(xs.unwrap_or_else(Vec::new)) }
+    attribute_value ::= { concrete::AttributeValue::None }
 
     attributes ::= keyword(k) attribute_value(v) { vec![(k, v)] }
     attributes ::= attributes(mut xs) keyword(k) attribute_value(v) { xs.push((k, v)); xs }
@@ -120,15 +120,15 @@ pomelo! {
     s_exprs ::= s_exprs(mut xs) s_expr(x) { xs.push(x); xs }
 
     // index ::= ⟨numeral⟩ | ⟨symbol⟩
-    index ::= Numeral(x) { visitors::Index::Numeral(x) }
-    index ::= bound_symbol(x) { visitors::Index::Symbol(x) }
+    index ::= Numeral(x) { concrete::Index::Numeral(x) }
+    index ::= bound_symbol(x) { concrete::Index::Symbol(x) }
 
     indices ::= index(x) { vec![x] }
     indices ::= indices(mut xs) index(x) { xs.push(x); xs }
 
     // identifier ::= ⟨symbol⟩ | ( _ ⟨symbol⟩ ⟨index⟩+ )
-    identifier ::= bound_symbol(symbol) { visitors::Identifier::Simple { symbol } }
-    identifier ::= LeftParen Underscore bound_symbol(symbol) indices(indices) RightParen { visitors::Identifier::Indexed { symbol, indices } }
+    identifier ::= bound_symbol(symbol) { concrete::Identifier::Simple { symbol } }
+    identifier ::= LeftParen Underscore bound_symbol(symbol) indices(indices) RightParen { concrete::Identifier::Indexed { symbol, indices } }
 
     // sort ::= ⟨identifier⟩ | ( ⟨identifier⟩ ⟨sort⟩+ )
     sort ::= identifier(id) { extra.0.visit_simple_sort(id)? }
@@ -221,11 +221,11 @@ pomelo! {
     // datatype_dec ::= ( ⟨constructor_dec⟩+ ) | ( par ( ⟨symbol⟩+ ) ( ⟨constructor_dec⟩+ ) )
     datatype_dec ::= LeftParen constructor_decs(xs) RightParen
     {
-        visitors::DatatypeDec { parameters: Vec::new(), constructors: xs }
+        concrete::DatatypeDec { parameters: Vec::new(), constructors: xs }
     }
     datatype_dec ::= LeftParen Par LeftParen fresh_symbols(ps) RightParen LeftParen constructor_decs(xs) RightParen RightParen
     {
-        visitors::DatatypeDec { parameters: ps, constructors: xs }
+        concrete::DatatypeDec { parameters: ps, constructors: xs }
     }
 
     datatype_decs ::= datatype_dec(x) { vec![x] }
@@ -234,7 +234,7 @@ pomelo! {
     // function_dec ::= ⟨symbol⟩ ( ⟨sorted_var⟩∗ ) ⟨sort⟩
     function_dec ::= fresh_symbol(x) LeftParen sorted_vars?(xs) RightParen sort(s)
     {
-        visitors::FunctionDec {
+        concrete::FunctionDec {
             name: x,
             parameters: xs.unwrap_or_else(Vec::new),
             result: s,
