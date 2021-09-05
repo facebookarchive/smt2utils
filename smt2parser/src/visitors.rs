@@ -189,76 +189,6 @@ impl<T1, T2, T3> AttributeValue<T1, T2, T3> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct DatatypeDec<Symbol = self::Symbol, Sort = self::Sort> {
-    pub parameters: Vec<Symbol>,
-    pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
-}
-
-impl<T1, T2> DatatypeDec<T1, T2> {
-    /// Remap the generically-typed values of a DatatypeDec value.
-    pub(crate) fn remap<V, F1, F2, F3, F4, R1, R2, E>(
-        self,
-        v: &mut V,
-        fpar: F1,
-        fcons: F2,
-        fsel: F3,
-        fsort: F4,
-    ) -> Result<DatatypeDec<R1, R2>, E>
-    where
-        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F3: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F4: Copy + Fn(&mut V, T2) -> Result<R2, E>,
-    {
-        Ok(DatatypeDec {
-            parameters: self
-                .parameters
-                .into_iter()
-                .map(|x| fpar(v, x))
-                .collect::<Result<_, E>>()?,
-            constructors: self
-                .constructors
-                .into_iter()
-                .map(|c| c.remap(v, fcons, fsel, fsort))
-                .collect::<Result<_, E>>()?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct FunctionDec<Symbol = self::Symbol, Sort = self::Sort> {
-    pub name: Symbol,
-    pub parameters: Vec<(Symbol, Sort)>,
-    pub result: Sort,
-}
-
-impl<T1, T2> FunctionDec<T1, T2> {
-    /// Remap the generically-typed values of a FunctionDec value.
-    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
-        self,
-        v: &mut V,
-        ffun: F1,
-        fvar: F2,
-        fsort: F3,
-    ) -> Result<FunctionDec<R1, R2>, E>
-    where
-        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
-        F3: Copy + Fn(&mut V, T2) -> Result<R2, E>,
-    {
-        Ok(FunctionDec {
-            name: ffun(v, self.name)?,
-            parameters: self
-                .parameters
-                .into_iter()
-                .map(|(s1, s2)| Ok((fvar(v, s1)?, fsort(v, s2)?)))
-                .collect::<Result<_, E>>()?,
-            result: fsort(v, self.result)?,
-        })
-    }
-}
-
 pub trait TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> {
     type T;
     type E;
@@ -335,6 +265,76 @@ impl<T1, T2> ConstructorDec<T1, T2> {
                 .into_iter()
                 .map(|(s1, s2)| Ok((fsel(v, s1)?, fsort(v, s2)?)))
                 .collect::<Result<_, E>>()?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub struct DatatypeDec<Symbol = self::Symbol, Sort = self::Sort> {
+    pub parameters: Vec<Symbol>,
+    pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
+}
+
+impl<T1, T2> DatatypeDec<T1, T2> {
+    /// Remap the generically-typed values of a DatatypeDec value.
+    pub(crate) fn remap<V, F1, F2, F3, F4, R1, R2, E>(
+        self,
+        v: &mut V,
+        fpar: F1,
+        fcons: F2,
+        fsel: F3,
+        fsort: F4,
+    ) -> Result<DatatypeDec<R1, R2>, E>
+    where
+        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F4: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+    {
+        Ok(DatatypeDec {
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|x| fpar(v, x))
+                .collect::<Result<_, E>>()?,
+            constructors: self
+                .constructors
+                .into_iter()
+                .map(|c| c.remap(v, fcons, fsel, fsort))
+                .collect::<Result<_, E>>()?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
+pub struct FunctionDec<Symbol = self::Symbol, Sort = self::Sort> {
+    pub name: Symbol,
+    pub parameters: Vec<(Symbol, Sort)>,
+    pub result: Sort,
+}
+
+impl<T1, T2> FunctionDec<T1, T2> {
+    /// Remap the generically-typed values of a FunctionDec value.
+    pub(crate) fn remap<V, F1, F2, F3, R1, R2, E>(
+        self,
+        v: &mut V,
+        ffun: F1,
+        fvar: F2,
+        fsort: F3,
+    ) -> Result<FunctionDec<R1, R2>, E>
+    where
+        F1: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F2: Copy + Fn(&mut V, T1) -> Result<R1, E>,
+        F3: Copy + Fn(&mut V, T2) -> Result<R2, E>,
+    {
+        Ok(FunctionDec {
+            name: ffun(v, self.name)?,
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|(s1, s2)| Ok((fvar(v, s1)?, fsort(v, s2)?)))
+                .collect::<Result<_, E>>()?,
+            result: fsort(v, self.result)?,
         })
     }
 }

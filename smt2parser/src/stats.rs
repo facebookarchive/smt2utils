@@ -205,9 +205,9 @@ type QualIdentifier = ();
 type SExpr = ();
 
 type Identifier = crate::visitors::Identifier<Symbol>;
-type AttributeValue = crate::concrete::AttributeValue<Constant, Symbol, SExpr>;
-type DatatypeDec = crate::concrete::DatatypeDec<Symbol, Sort>;
-type FunctionDec = crate::concrete::FunctionDec<Symbol, Sort>;
+type AttributeValue = crate::visitors::AttributeValue<Constant, Symbol, SExpr>;
+type DatatypeDec = crate::visitors::DatatypeDec<Symbol, Sort>;
+type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
 
 impl SExprVisitor<Constant, Symbol, Keyword> for Smt2Counters {
     type T = ();

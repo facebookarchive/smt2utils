@@ -1127,11 +1127,11 @@ impl std::fmt::Display for Keyword {
     }
 }
 
-impl<T1, T2, T3> std::fmt::Display for SExpr<T1, T2, T3>
+impl<Constant, Symbol, Keyword> std::fmt::Display for SExpr<Constant, Symbol, Keyword>
 where
-    T1: std::fmt::Display,
-    T2: std::fmt::Display,
-    T3: std::fmt::Display,
+    Constant: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Keyword: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨spec_constant⟩ | ⟨symbol⟩ | ⟨keyword⟩ | ( ⟨s_expr⟩∗ )
@@ -1176,14 +1176,15 @@ where
     }
 }
 
-impl<T1, T2, T3, T4, T5, T6> std::fmt::Display for Term<T1, T2, T3, T4, T5, T6>
+impl<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> std::fmt::Display
+    for Term<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>
 where
-    T1: std::fmt::Display,
-    T2: std::fmt::Display,
-    T3: std::fmt::Display,
-    T4: std::fmt::Display,
-    T5: std::fmt::Display,
-    T6: std::fmt::Display,
+    Constant: std::fmt::Display,
+    QualIdentifier: std::fmt::Display,
+    Keyword: std::fmt::Display,
+    SExpr: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Sort: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Term::*;
@@ -1267,14 +1268,15 @@ where
     }
 }
 
-impl<T1, T2, T3, T4, T5, T6> std::fmt::Display for Command<T1, T2, T3, T4, T5, T6>
+impl<Term, Symbol, Sort, Keyword, Constant, SExpr> std::fmt::Display
+    for Command<Term, Symbol, Sort, Keyword, Constant, SExpr>
 where
-    T1: std::fmt::Display,
-    T2: std::fmt::Display,
-    T3: std::fmt::Display,
-    T4: std::fmt::Display,
-    T5: std::fmt::Display,
-    T6: std::fmt::Display,
+    Term: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Sort: std::fmt::Display,
+    Keyword: std::fmt::Display,
+    Constant: std::fmt::Display,
+    SExpr: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
@@ -1326,7 +1328,7 @@ where
                 f,
                 "(declare-sort {} {})",
                 symbol,
-                Constant::Numeral(arity.clone())
+                self::Constant::Numeral(arity.clone())
             ),
             DefineFun { sig, term } => {
                 // ( define-fun ⟨function_dec⟩ ⟨term⟩ )
@@ -1356,7 +1358,7 @@ where
                     sort
                 )
             }
-            Echo { message } => write!(f, "(echo {})", Constant::String(message.clone())),
+            Echo { message } => write!(f, "(echo {})", self::Constant::String(message.clone())),
             Exit => write!(f, "(exit)"),
             GetAssertions => write!(f, "(get-assertions)"),
             GetAssignment => write!(f, "(get-assignment)"),
@@ -1370,8 +1372,8 @@ where
                 // ( get-value ( ⟨term⟩+ ) )
                 write!(f, "(get-value ({}))", terms.iter().format(" "))
             }
-            Pop { level } => write!(f, "(pop {})", Constant::Numeral(level.clone())),
-            Push { level } => write!(f, "(push {})", Constant::Numeral(level.clone())),
+            Pop { level } => write!(f, "(pop {})", self::Constant::Numeral(level.clone())),
+            Push { level } => write!(f, "(push {})", self::Constant::Numeral(level.clone())),
             Reset => write!(f, "(reset)"),
             ResetAssertions => write!(f, "(reset-assertions)"),
             SetInfo { keyword, value } => write!(f, "(set-info {} {})", keyword, value),
