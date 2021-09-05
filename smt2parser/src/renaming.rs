@@ -6,7 +6,7 @@
 use crate::{
     concrete::*,
     rewriter::Rewriter,
-    visitors::{Smt2Visitor, SymbolKind},
+    visitors::{Identifier, Index, Smt2Visitor, SymbolKind},
 };
 use num::ToPrimitive;
 use std::collections::{BTreeMap, BTreeSet};

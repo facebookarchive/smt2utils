@@ -204,7 +204,7 @@ type Sort = ();
 type QualIdentifier = ();
 type SExpr = ();
 
-type Identifier = crate::concrete::Identifier<Symbol>;
+type Identifier = crate::visitors::Identifier<Symbol>;
 type AttributeValue = crate::concrete::AttributeValue<Constant, Symbol, SExpr>;
 type DatatypeDec = crate::concrete::DatatypeDec<Symbol, Sort>;
 type FunctionDec = crate::concrete::FunctionDec<Symbol, Sort>;
