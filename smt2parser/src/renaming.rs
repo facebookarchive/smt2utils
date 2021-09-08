@@ -538,14 +538,11 @@ fn test_symbol_renaming() {
 
     assert_eq!(command2, command3);
     assert_eq!(
-        builder
-            .current_local_symbols()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        builder.current_local_symbols().iter().collect::<Vec<_>>(),
         vec![(&SymbolKind::Variable, &vec!["x".to_string()])]
     );
     assert_eq!(
-        builder.global_symbols().into_iter().collect::<Vec<_>>(),
+        builder.global_symbols().iter().collect::<Vec<_>>(),
         vec!["=", "f", "x"]
     );
 }

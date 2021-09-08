@@ -3,10 +3,7 @@
 
 //! The visiting traits expected by the SMT2 parser.
 
-use crate::{
-    concrete::{Constant, SExpr, Sort, Symbol},
-    Binary, Decimal, Hexadecimal, Numeral,
-};
+use crate::{Binary, Decimal, Hexadecimal, Numeral};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
@@ -74,7 +71,7 @@ pub trait SExprVisitor<Constant, Symbol, Keyword> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Index<Symbol = self::Symbol> {
+pub enum Index<Symbol = crate::concrete::Symbol> {
     Numeral(Numeral),
     Symbol(Symbol),
 }
@@ -95,7 +92,7 @@ impl<S> Index<S> {
 
 /// Concrete identifier.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Identifier<Symbol = self::Symbol> {
+pub enum Identifier<Symbol = crate::concrete::Symbol> {
     Simple {
         symbol: Symbol,
     },
@@ -152,7 +149,11 @@ pub trait QualIdentifierVisitor<Identifier, Sort> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum AttributeValue<Constant = self::Constant, Symbol = self::Symbol, SExpr = self::SExpr> {
+pub enum AttributeValue<
+    Constant = crate::concrete::Constant,
+    Symbol = crate::concrete::Symbol,
+    SExpr = crate::concrete::SExpr,
+> {
     None,
     Constant(Constant),
     Symbol(Symbol),
@@ -270,7 +271,7 @@ impl<T1, T2> ConstructorDec<T1, T2> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct DatatypeDec<Symbol = self::Symbol, Sort = self::Sort> {
+pub struct DatatypeDec<Symbol = crate::concrete::Symbol, Sort = crate::concrete::Sort> {
     pub parameters: Vec<Symbol>,
     pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
 }
@@ -307,7 +308,7 @@ impl<T1, T2> DatatypeDec<T1, T2> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct FunctionDec<Symbol = self::Symbol, Sort = self::Sort> {
+pub struct FunctionDec<Symbol = crate::concrete::Symbol, Sort = crate::concrete::Sort> {
     pub name: Symbol,
     pub parameters: Vec<(Symbol, Sort)>,
     pub result: Sort,

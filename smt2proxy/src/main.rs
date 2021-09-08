@@ -253,10 +253,10 @@ fn main() {
         if smt2proxy_normalize_symbols {
             let builder =
                 smt2parser::renaming::TesterModernizer::new(smt2parser::concrete::SyntaxBuilder);
-            Box::new(smt2parser::CommandStream::new(input, builder, None).into_iter())
+            Box::new(smt2parser::CommandStream::new(input, builder, None))
         } else {
             let builder = smt2parser::concrete::SyntaxBuilder;
-            Box::new(smt2parser::CommandStream::new(input, builder, None).into_iter())
+            Box::new(smt2parser::CommandStream::new(input, builder, None))
         }
     };
     for result in stream {
