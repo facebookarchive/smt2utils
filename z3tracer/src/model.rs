@@ -647,7 +647,7 @@ impl Model {
         };
         // Need to update the entry of cid0 and re-import deps from
         // id1.
-        let cdata = self.scoped_term_data(&id1);
+        let cdata = self.scoped_term_data(id1);
         let c_qi_deps = cdata.qi_deps.clone();
         let c_proof_deps = cdata.proof_deps.clone();
         self.current_scope.needs_consolidation = true;
@@ -739,8 +739,8 @@ impl Model {
             return None;
         }
         let index = std::cmp::max(
-            self.term_max_scope_index(&id1),
-            self.term_max_scope_index(&id2),
+            self.term_max_scope_index(id1),
+            self.term_max_scope_index(id2),
         );
         Some(index)
     }
@@ -1026,8 +1026,8 @@ impl LogVisitor for &mut Model {
                     {
                         return Err(RawError::CannotCheckEquality(id1.clone(), id2.clone()));
                     }
-                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id1);
-                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id2);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, id1);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, id2);
                 }
             }
         }
@@ -1057,7 +1057,7 @@ impl LogVisitor for &mut Model {
                 key,
                 scope_index: 0,
             };
-            self.scoped_term_data_mut(&id).qi_deps.insert(qi);
+            self.scoped_term_data_mut(id).qi_deps.insert(qi);
         }
         self.pending_instances.push(PendingQiInstance {
             key,
@@ -1109,7 +1109,7 @@ impl LogVisitor for &mut Model {
                 if self.has_log_consistency_checks() && scope_index.is_none() {
                     return Err(RawError::CannotProcessEquality(id, eq));
                 }
-                let data = self.scoped_term_data(&eid);
+                let data = self.scoped_term_data(eid);
                 (
                     cid,
                     scope_index.unwrap_or(0),
@@ -1138,8 +1138,8 @@ impl LogVisitor for &mut Model {
                     if index > scope_index {
                         scope_index = index;
                     }
-                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id1);
-                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, &id2);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, id1);
+                    self.add_deps_from_term(&mut qi_deps, &mut proof_deps, id2);
                 }
                 if self.has_log_consistency_checks()
                     && !self.check_congruence_equality(eqs, &id, cid)?

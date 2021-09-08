@@ -101,6 +101,7 @@ where
 {
     type Item = Result<T::Command, T::Error>;
 
+    #[allow(clippy::while_let_on_iterator)]
     fn next(&mut self) -> Option<Result<T::Command, T::Error>> {
         let mut parser = parser::Parser::new((&mut self.visitor, &mut self.position));
         let mut unmatched_paren = 0;

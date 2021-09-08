@@ -176,7 +176,7 @@ impl CommandProcessor {
             | SetLogic { .. } => Forcing,
 
             SetOption { keyword, .. } => {
-                if self.options.contains_key(&keyword) {
+                if self.options.contains_key(keyword) {
                     Skipped
                 } else {
                     Forcing
