@@ -33,78 +33,86 @@ pub struct Symbol(pub String);
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Keyword(pub String);
 
-/// Concrete identifier.
-pub type Identifier = crate::visitors::Identifier<Symbol>;
+pub use crate::visitors::Identifier;
 
 /// Concrete syntax for an S-expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum SExpr {
+pub enum SExpr<Constant = self::Constant, Symbol = self::Symbol, Keyword = self::Keyword> {
     Constant(Constant),
     Symbol(Symbol),
     Keyword(Keyword),
-    Application(Vec<SExpr>),
+    Application(Vec<Self>),
 }
 
-/// Concrete [`crate::visitors::AttributeValue`].
-pub type AttributeValue = crate::visitors::AttributeValue<Constant, Symbol, SExpr>;
-/// Concrete [`crate::visitors::DatatypeDec`].
-pub type DatatypeDec = crate::visitors::DatatypeDec<Symbol, Sort>;
-/// Concrete [`crate::visitors::FunctionDec`].
-pub type FunctionDec = crate::visitors::FunctionDec<Symbol, Sort>;
+pub use crate::visitors::{AttributeValue, DatatypeDec, FunctionDec};
 
 /// Concrete syntax for a sort.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Sort {
+pub enum Sort<Identifier = self::Identifier> {
     Simple {
         identifier: Identifier,
     },
     Parameterized {
         identifier: Identifier,
-        parameters: Vec<Sort>,
+        parameters: Vec<Self>,
     },
 }
 
 /// Concrete syntax for a qualified-identifier.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum QualIdentifier {
+pub enum QualIdentifier<Identifier = self::Identifier, Sort = self::Sort> {
     Simple { identifier: Identifier },
     Sorted { identifier: Identifier, sort: Sort },
 }
 
 /// Concrete syntax for a term.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Term {
+pub enum Term<
+    Constant = self::Constant,
+    QualIdentifier = self::QualIdentifier,
+    Keyword = self::Keyword,
+    SExpr = self::SExpr,
+    Symbol = self::Symbol,
+    Sort = self::Sort,
+> {
     Constant(Constant),
     QualIdentifier(QualIdentifier),
     Application {
         qual_identifier: QualIdentifier,
-        arguments: Vec<Term>,
+        arguments: Vec<Self>,
     },
     Let {
-        var_bindings: Vec<(Symbol, Term)>,
-        term: Box<Term>,
+        var_bindings: Vec<(Symbol, Self)>,
+        term: Box<Self>,
     },
     Forall {
         vars: Vec<(Symbol, Sort)>,
-        term: Box<Term>,
+        term: Box<Self>,
     },
     Exists {
         vars: Vec<(Symbol, Sort)>,
-        term: Box<Term>,
+        term: Box<Self>,
     },
     Match {
-        term: Box<Term>,
-        cases: Vec<(Vec<Symbol>, Term)>,
+        term: Box<Self>,
+        cases: Vec<(Vec<Symbol>, Self)>,
     },
     Attributes {
-        term: Box<Term>,
-        attributes: Vec<(Keyword, AttributeValue)>,
+        term: Box<Self>,
+        attributes: Vec<(Keyword, AttributeValue<Constant, Symbol, SExpr>)>,
     },
 }
 
 /// Concrete syntax for a command.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Command {
+pub enum Command<
+    Term = self::Term,
+    Symbol = self::Symbol,
+    Sort = self::Sort,
+    Keyword = self::Keyword,
+    Constant = self::Constant,
+    SExpr = self::SExpr,
+> {
     Assert {
         term: Term,
     },
@@ -118,10 +126,10 @@ pub enum Command {
     },
     DeclareDatatype {
         symbol: Symbol,
-        datatype: DatatypeDec,
+        datatype: DatatypeDec<Symbol, Sort>,
     },
     DeclareDatatypes {
-        datatypes: Vec<(Symbol, Numeral, DatatypeDec)>,
+        datatypes: Vec<(Symbol, Numeral, DatatypeDec<Symbol, Sort>)>,
     },
     DeclareFun {
         symbol: Symbol,
@@ -133,15 +141,15 @@ pub enum Command {
         arity: Numeral,
     },
     DefineFun {
-        sig: FunctionDec,
+        sig: FunctionDec<Symbol, Sort>,
         term: Term,
     },
     DefineFunRec {
-        sig: FunctionDec,
+        sig: FunctionDec<Symbol, Sort>,
         term: Term,
     },
     DefineFunsRec {
-        funs: Vec<(FunctionDec, Term)>,
+        funs: Vec<(FunctionDec<Symbol, Sort>, Term)>,
     },
     DefineSort {
         symbol: Symbol,
@@ -177,14 +185,14 @@ pub enum Command {
     ResetAssertions,
     SetInfo {
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     },
     SetLogic {
         symbol: Symbol,
     },
     SetOption {
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     },
 }
 
@@ -266,8 +274,8 @@ impl Keyword {
     }
 }
 
-impl SExprVisitor<Constant, Symbol, Keyword> for SyntaxBuilder {
-    type T = SExpr;
+impl<Constant, Symbol, Keyword> SExprVisitor<Constant, Symbol, Keyword> for SyntaxBuilder {
+    type T = SExpr<Constant, Symbol, Keyword>;
     type E = Error;
 
     fn visit_constant_s_expr(&mut self, value: Constant) -> Result<Self::T, Self::E> {
@@ -321,17 +329,17 @@ impl SExpr {
     }
 }
 
-impl SortVisitor<Symbol> for SyntaxBuilder {
-    type T = Sort;
+impl<Symbol> SortVisitor<Symbol> for SyntaxBuilder {
+    type T = Sort<Identifier<Symbol>>;
     type E = Error;
 
-    fn visit_simple_sort(&mut self, identifier: Identifier) -> Result<Self::T, Self::E> {
+    fn visit_simple_sort(&mut self, identifier: Identifier<Symbol>) -> Result<Self::T, Self::E> {
         Ok(Sort::Simple { identifier })
     }
 
     fn visit_parameterized_sort(
         &mut self,
-        identifier: Identifier,
+        identifier: Identifier<Symbol>,
         parameters: Vec<Self::T>,
     ) -> Result<Self::T, Self::E> {
         Ok(Sort::Parameterized {
@@ -368,8 +376,8 @@ impl Sort {
     }
 }
 
-impl QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
-    type T = QualIdentifier;
+impl<Identifier, Sort> QualIdentifierVisitor<Identifier, Sort> for SyntaxBuilder {
+    type T = QualIdentifier<Identifier, Sort>;
     type E = Error;
 
     fn visit_simple_identifier(&mut self, identifier: Identifier) -> Result<Self::T, Self::E> {
@@ -391,7 +399,7 @@ impl QualIdentifier {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = T, E = E>,
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = T, E = E>,
     {
         use QualIdentifier::*;
         match self {
@@ -408,8 +416,10 @@ impl QualIdentifier {
     }
 }
 
-impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for SyntaxBuilder {
-    type T = Term;
+impl<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>
+    TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for SyntaxBuilder
+{
+    type T = Term<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>;
     type E = Error;
 
     fn visit_constant(&mut self, constant: Constant) -> Result<Self::T, Self::E> {
@@ -473,7 +483,7 @@ impl TermVisitor<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> for Syn
     fn visit_attributes(
         &mut self,
         term: Self::T,
-        attributes: Vec<(Keyword, AttributeValue)>,
+        attributes: Vec<(Keyword, AttributeValue<Constant, Symbol, SExpr>)>,
     ) -> Result<Self::T, Self::E> {
         let term = Box::new(term);
         Ok(Term::Attributes { term, attributes })
@@ -486,7 +496,7 @@ impl Term {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
@@ -620,8 +630,10 @@ impl Term {
     }
 }
 
-impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuilder {
-    type T = Command;
+impl<Term, Symbol, Sort, Keyword, Constant, SExpr>
+    CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuilder
+{
+    type T = Command<Term, Symbol, Sort, Keyword, Constant, SExpr>;
     type E = Error;
 
     fn visit_assert(&mut self, term: Term) -> Result<Self::T, Self::E> {
@@ -646,14 +658,14 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_declare_datatype(
         &mut self,
         symbol: Symbol,
-        datatype: DatatypeDec,
+        datatype: DatatypeDec<Symbol, Sort>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DeclareDatatype { symbol, datatype })
     }
 
     fn visit_declare_datatypes(
         &mut self,
-        datatypes: Vec<(Symbol, Numeral, DatatypeDec)>,
+        datatypes: Vec<(Symbol, Numeral, DatatypeDec<Symbol, Sort>)>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DeclareDatatypes { datatypes })
     }
@@ -675,17 +687,25 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
         Ok(Command::DeclareSort { symbol, arity })
     }
 
-    fn visit_define_fun(&mut self, sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
+    fn visit_define_fun(
+        &mut self,
+        sig: FunctionDec<Symbol, Sort>,
+        term: Term,
+    ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFun { sig, term })
     }
 
-    fn visit_define_fun_rec(&mut self, sig: FunctionDec, term: Term) -> Result<Self::T, Self::E> {
+    fn visit_define_fun_rec(
+        &mut self,
+        sig: FunctionDec<Symbol, Sort>,
+        term: Term,
+    ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFunRec { sig, term })
     }
 
     fn visit_define_funs_rec(
         &mut self,
-        funs: Vec<(FunctionDec, Term)>,
+        funs: Vec<(FunctionDec<Symbol, Sort>, Term)>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::DefineFunsRec { funs })
     }
@@ -766,7 +786,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_set_info(
         &mut self,
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::SetInfo { keyword, value })
     }
@@ -778,7 +798,7 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for SyntaxBuil
     fn visit_set_option(
         &mut self,
         keyword: Keyword,
-        value: AttributeValue,
+        value: AttributeValue<Constant, Symbol, SExpr>,
     ) -> Result<Self::T, Self::E> {
         Ok(Command::SetOption { keyword, value })
     }
@@ -790,7 +810,7 @@ impl Command {
     where
         V: SortVisitor<S1, T = S2, E = E>
             + SymbolVisitor<T = S1, E = E>
-            + QualIdentifierVisitor<crate::visitors::Identifier<S1>, S2, T = S3, E = E>
+            + QualIdentifierVisitor<Identifier<S1>, S2, T = S3, E = E>
             + ConstantVisitor<T = S4, E = E>
             + KeywordVisitor<T = S5, E = E>
             + SExprVisitor<S4, S1, S5, T = S6, E = E>
@@ -1107,7 +1127,12 @@ impl std::fmt::Display for Keyword {
     }
 }
 
-impl std::fmt::Display for SExpr {
+impl<Constant, Symbol, Keyword> std::fmt::Display for SExpr<Constant, Symbol, Keyword>
+where
+    Constant: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Keyword: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨spec_constant⟩ | ⟨symbol⟩ | ⟨keyword⟩ | ( ⟨s_expr⟩∗ )
         use SExpr::*;
@@ -1120,7 +1145,10 @@ impl std::fmt::Display for SExpr {
     }
 }
 
-impl std::fmt::Display for Sort {
+impl<Identifier> std::fmt::Display for Sort<Identifier>
+where
+    Identifier: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨identifier⟩ | ( ⟨identifier⟩ ⟨sort⟩+ )
         use Sort::*;
@@ -1134,7 +1162,10 @@ impl std::fmt::Display for Sort {
     }
 }
 
-impl std::fmt::Display for QualIdentifier {
+impl<Identifier> std::fmt::Display for QualIdentifier<Identifier>
+where
+    Identifier: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // ⟨identifier⟩ | ( as ⟨identifier⟩ ⟨sort⟩ )
         use QualIdentifier::*;
@@ -1145,7 +1176,16 @@ impl std::fmt::Display for QualIdentifier {
     }
 }
 
-impl std::fmt::Display for Term {
+impl<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort> std::fmt::Display
+    for Term<Constant, QualIdentifier, Keyword, SExpr, Symbol, Sort>
+where
+    Constant: std::fmt::Display,
+    QualIdentifier: std::fmt::Display,
+    Keyword: std::fmt::Display,
+    SExpr: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Sort: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Term::*;
         match self {
@@ -1228,7 +1268,16 @@ impl std::fmt::Display for Term {
     }
 }
 
-impl std::fmt::Display for Command {
+impl<Term, Symbol, Sort, Keyword, Constant, SExpr> std::fmt::Display
+    for Command<Term, Symbol, Sort, Keyword, Constant, SExpr>
+where
+    Term: std::fmt::Display,
+    Symbol: std::fmt::Display,
+    Sort: std::fmt::Display,
+    Keyword: std::fmt::Display,
+    Constant: std::fmt::Display,
+    SExpr: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
         match self {
@@ -1279,7 +1328,7 @@ impl std::fmt::Display for Command {
                 f,
                 "(declare-sort {} {})",
                 symbol,
-                Constant::Numeral(arity.clone())
+                self::Constant::Numeral(arity.clone())
             ),
             DefineFun { sig, term } => {
                 // ( define-fun ⟨function_dec⟩ ⟨term⟩ )
@@ -1309,7 +1358,7 @@ impl std::fmt::Display for Command {
                     sort
                 )
             }
-            Echo { message } => write!(f, "(echo {})", Constant::String(message.clone())),
+            Echo { message } => write!(f, "(echo {})", self::Constant::String(message.clone())),
             Exit => write!(f, "(exit)"),
             GetAssertions => write!(f, "(get-assertions)"),
             GetAssignment => write!(f, "(get-assignment)"),
@@ -1323,8 +1372,8 @@ impl std::fmt::Display for Command {
                 // ( get-value ( ⟨term⟩+ ) )
                 write!(f, "(get-value ({}))", terms.iter().format(" "))
             }
-            Pop { level } => write!(f, "(pop {})", Constant::Numeral(level.clone())),
-            Push { level } => write!(f, "(push {})", Constant::Numeral(level.clone())),
+            Pop { level } => write!(f, "(pop {})", self::Constant::Numeral(level.clone())),
+            Push { level } => write!(f, "(push {})", self::Constant::Numeral(level.clone())),
             Reset => write!(f, "(reset)"),
             ResetAssertions => write!(f, "(reset-assertions)"),
             SetInfo { keyword, value } => write!(f, "(set-info {} {})", keyword, value),

@@ -3,7 +3,10 @@
 
 //! The visiting traits expected by the SMT2 parser.
 
-use crate::{Binary, Decimal, Hexadecimal, Numeral};
+use crate::{
+    concrete::{Constant, SExpr, Sort, Symbol},
+    Binary, Decimal, Hexadecimal, Numeral,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
@@ -71,7 +74,7 @@ pub trait SExprVisitor<Constant, Symbol, Keyword> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Index<Symbol> {
+pub enum Index<Symbol = self::Symbol> {
     Numeral(Numeral),
     Symbol(Symbol),
 }
@@ -90,8 +93,9 @@ impl<S> Index<S> {
     }
 }
 
+/// Concrete identifier.
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum Identifier<Symbol> {
+pub enum Identifier<Symbol = self::Symbol> {
     Simple {
         symbol: Symbol,
     },
@@ -148,7 +152,7 @@ pub trait QualIdentifierVisitor<Identifier, Sort> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub enum AttributeValue<Constant, Symbol, SExpr> {
+pub enum AttributeValue<Constant = self::Constant, Symbol = self::Symbol, SExpr = self::SExpr> {
     None,
     Constant(Constant),
     Symbol(Symbol),
@@ -266,7 +270,7 @@ impl<T1, T2> ConstructorDec<T1, T2> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct DatatypeDec<Symbol, Sort> {
+pub struct DatatypeDec<Symbol = self::Symbol, Sort = self::Sort> {
     pub parameters: Vec<Symbol>,
     pub constructors: Vec<ConstructorDec<Symbol, Sort>>,
 }
@@ -303,7 +307,7 @@ impl<T1, T2> DatatypeDec<T1, T2> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize, Deserialize)]
-pub struct FunctionDec<Symbol, Sort> {
+pub struct FunctionDec<Symbol = self::Symbol, Sort = self::Sort> {
     pub name: Symbol,
     pub parameters: Vec<(Symbol, Sort)>,
     pub result: Sort,
