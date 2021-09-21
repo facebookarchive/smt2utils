@@ -7,7 +7,7 @@ use crate::{
     concrete::Error,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor, TheoryVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -553,6 +553,15 @@ impl CommandVisitor<Term, Symbol, Sort, Keyword, Constant, SExpr> for Smt2Counte
     }
 }
 
+impl TheoryVisitor<Symbol> for Smt2Counters {
+    type E = Error;
+    type T = ();
+
+    fn visit_theory(&mut self, _name: Symbol) -> Result<(), Self::E> {
+        Ok(())
+    }
+}
+
 impl Smt2Visitor for Smt2Counters {
     type Error = Error;
     type Constant = ();
@@ -563,6 +572,7 @@ impl Smt2Visitor for Smt2Counters {
     type Symbol = ();
     type Term = Term;
     type Command = ();
+    type Theory = ();
 
     fn syntax_error(&mut self, position: Position, s: String) -> Self::Error {
         Error::SyntaxError(position, s)

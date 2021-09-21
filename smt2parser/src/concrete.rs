@@ -7,7 +7,7 @@ use crate::{
     lexer,
     visitors::{
         CommandVisitor, ConstantVisitor, KeywordVisitor, QualIdentifierVisitor, SExprVisitor,
-        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor,
+        Smt2Visitor, SortVisitor, SymbolKind, SymbolVisitor, TermVisitor, TheoryVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -194,6 +194,10 @@ pub enum Command<
         keyword: Keyword,
         value: AttributeValue<Constant, Symbol, SExpr>,
     },
+}
+
+pub struct Theory<Symbol = self::Symbol> {
+    name: Symbol,
 }
 
 /// An implementation of [`Smt2Visitor`] that returns concrete syntax values.
@@ -1045,6 +1049,15 @@ impl Command {
     }
 }
 
+impl TheoryVisitor<Symbol> for SyntaxBuilder {
+    type E = Error;
+    type T = Theory;
+
+    fn visit_theory(&mut self, name: Symbol) -> Result<Self::T, Self::E> {
+        Ok(Theory { name })
+    }
+}
+
 impl Smt2Visitor for SyntaxBuilder {
     type Error = Error;
     type Constant = Constant;
@@ -1055,6 +1068,7 @@ impl Smt2Visitor for SyntaxBuilder {
     type Symbol = Symbol;
     type Term = Term;
     type Command = Command;
+    type Theory = Theory;
 
     fn syntax_error(&mut self, position: crate::Position, s: String) -> Self::Error {
         Error::SyntaxError(position, s)

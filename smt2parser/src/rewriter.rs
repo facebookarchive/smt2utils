@@ -9,7 +9,7 @@ use crate::{
     visitors::{
         AttributeValue, CommandVisitor, ConstantVisitor, DatatypeDec, FunctionDec, Identifier,
         KeywordVisitor, QualIdentifierVisitor, SExprVisitor, Smt2Visitor, SortVisitor, SymbolKind,
-        SymbolVisitor, TermVisitor,
+        SymbolVisitor, TermVisitor, TheoryVisitor,
     },
     Binary, Decimal, Hexadecimal, Numeral, Position,
 };
@@ -720,6 +720,19 @@ where
     }
 }
 
+impl<R, V> TheoryVisitor<V::Symbol> for R
+where
+    R: Rewriter<V = V>,
+    V: Smt2Visitor,
+{
+    type T = V::Theory;
+    type E = R::Error;
+
+    fn visit_theory(&mut self, name: V::Symbol) -> Result<Self::T, Self::E> {
+        self.visit_theory(name)
+    }
+}
+
 impl<R, V> CommandVisitor<V::Term, V::Symbol, V::Sort, V::Keyword, V::Constant, V::SExpr> for R
 where
     R: Rewriter<V = V>,
@@ -910,6 +923,7 @@ where
     type Symbol = V::Symbol;
     type Term = V::Term;
     type Command = V::Command;
+    type Theory = V::Theory;
 
     fn syntax_error(&mut self, pos: Position, s: String) -> Self::Error {
         self.visitor().syntax_error(pos, s).into()

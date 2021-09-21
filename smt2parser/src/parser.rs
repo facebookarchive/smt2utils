@@ -10,7 +10,7 @@ pub use internal::{Parser, Token};
 
 pomelo! {
     %module internal;
-    %include { use crate::visitors; }
+    %include { use crate::visitors; use crate::parser::ParseResult; }
 
     %stack_size 0;
 
@@ -33,6 +33,10 @@ pomelo! {
     %type String String;
 
     %type command T::Command;
+
+    %type theory T::Theory;
+
+    %type mode ParseResult<T::Command, T::Theory>;
 
     %type term T::Term;
     %type terms Vec<T::Term>;
@@ -89,7 +93,7 @@ pomelo! {
     %type sort_dec (T::Symbol, crate::Numeral);
     %type sort_decs Vec<(T::Symbol, crate::Numeral)>;
 
-    %start_symbol command;
+    %start_symbol mode;
 
     bound_symbol ::= Symbol(s) { extra.0.visit_bound_symbol(s)? }
     fresh_symbol ::= Symbol(s) { extra.0.visit_fresh_symbol(s, crate::visitors::SymbolKind::Unknown)? }
@@ -355,6 +359,18 @@ pomelo! {
     command ::= LeftParen SetLogic bound_symbol(x) RightParen { extra.0.visit_set_logic(x)? }
     //   ( set-option ⟨attribute⟩ )
     command ::= LeftParen SetOption keyword(k) attribute_value(v) RightParen { extra.0.visit_set_option(k, v)? }
+
+
+    //   ( theory ⟨symbol⟩ ⟨theory_attributes⟩+ )
+    theory ::= LeftParen Theory fresh_symbol(s) RightParen { extra.0.visit_theory(s)? }
+
+    mode ::= command(c) { ParseResult::Command(c) }
+    mode ::= theory(td) { ParseResult::Theory(td) }
+}
+
+pub enum ParseResult<C, T> {
+    Command(C),
+    Theory(T),
 }
 
 #[cfg(test)]
@@ -369,7 +385,10 @@ pub(crate) mod tests {
         for token in tokens.into_iter() {
             p.parse(token)?;
         }
-        Ok(p.end_of_input()?.0)
+        match p.end_of_input()?.0 {
+            ParseResult::Command(c) => Ok(c),
+            ParseResult::Theory(t) => panic!("Expected command"),
+        }
     }
 
     #[test]
