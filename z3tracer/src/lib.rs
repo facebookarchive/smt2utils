@@ -38,16 +38,16 @@
 //! * The successive backtracking levels during SMT solving;
 //!
 //! * SAT/SMT conflicts and their causal dependencies in terms of QIs;
-//! ![Conflicts](https://github.com/facebookincubator/smt2utils/blob/master/z3tracer/img/z3_tracer_1.jpg?raw=true)
+//! ![Conflicts](https://github.com/facebookincubator/smt2utils/blob/main/z3tracer/img/z3_tracer_1.jpg?raw=true)
 //!
 //! * Causal dependencies between QIs.
-//! ![Causal dependencies between QIs](https://github.com/facebookincubator/smt2utils/blob/master/z3tracer/img/z3_tracer_2.jpg?raw=true)
+//! ![Causal dependencies between QIs](https://github.com/facebookincubator/smt2utils/blob/main/z3tracer/img/z3_tracer_2.jpg?raw=true)
 //!
 //! A tool `z3tracer` based on the library is provided to process a log file `z3.log` from the
 //! command line and generate charts.
 //!
 //! See also in the
-//! [repository](https://github.com/facebookincubator/smt2utils/tree/master/z3tracer/notebooks)
+//! [repository](https://github.com/facebookincubator/smt2utils/tree/main/z3tracer/notebooks)
 //! for additional examples using Jupyter notebooks.
 //!
 //! Currently, this library only supports Z3 v4.8.9.

@@ -26,4 +26,4 @@ for the most up-to-date installation instructions.
 
 * Examples based on [plotly](https://github.com/igiagkiozis/plotly) may require [additional installation steps](https://igiagkiozis.github.io/plotly/content/fundamentals/jupyter_support.html)
   to make Javascript libraries available to Jupyter notebooks. Eventually, it should look like
-  [this](https://nbviewer.jupyter.org/github/facebookincubator/smt2utils/blob/master/z3tracer/notebooks/example_plotly.ipynb).
+  [this](https://nbviewer.jupyter.org/github/facebookincubator/smt2utils/blob/main/z3tracer/notebooks/example_plotly.ipynb).
