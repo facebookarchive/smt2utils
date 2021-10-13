@@ -482,6 +482,10 @@ pub trait Smt2Visitor:
         <Self as Smt2Visitor>::SExpr,
         T = <Self as Smt2Visitor>::Command,
         E = <Self as Smt2Visitor>::Error,
+    > + TheoryVisitor<
+        <Self as Smt2Visitor>::Symbol,
+        T = <Self as Smt2Visitor>::Theory,
+        E = <Self as Smt2Visitor>::Error,
     >
 {
     type Error;
@@ -493,9 +497,18 @@ pub trait Smt2Visitor:
     type Symbol;
     type Term;
     type Command;
+    type Theory;
 
     fn syntax_error(&mut self, position: crate::Position, s: String) -> Self::Error;
     fn parsing_error(&mut self, position: crate::Position, s: String) -> Self::Error;
+}
+
+/// A visitor for the entire SMT2 syntax.
+pub trait TheoryVisitor<Symbol> {
+    type E;
+    type T;
+
+    fn visit_theory(&mut self, name: Symbol) -> Result<Self::T, Self::E>;
 }
 
 impl<Symbol> std::fmt::Display for Index<Symbol>

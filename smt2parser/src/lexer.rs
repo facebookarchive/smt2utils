@@ -79,6 +79,7 @@ const KEYWORDS: &[(&str, Token)] = {
         ("set-info", SetInfo),
         ("set-logic", SetLogic),
         ("set-option", SetOption),
+        ("theory", Theory),
     ]
 };
 

@@ -53,6 +53,7 @@ pub type Binary = Vec<bool>;
 pub use concrete::Error;
 /// A position in the input.
 pub use lexer::Position;
+use parser::ParseResult;
 
 /// Parse the input data and return a stream of interpreted SMT2 commands
 pub struct CommandStream<R, T>
@@ -121,7 +122,8 @@ where
             }
             if unmatched_paren == 0 {
                 return match parser.end_of_input() {
-                    Ok((command, _)) => Some(Ok(command)),
+                    Ok((ParseResult::Command(command), _)) => Some(Ok(command)),
+                    Ok((ParseResult::Theory(res), _)) => unimplemented!(),
                     Err(err) => Some(Err(err)),
                 };
             }
