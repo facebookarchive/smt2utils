@@ -22,6 +22,9 @@ as Z3 and CVC4.
 
 * [smt2patch](smt2patch) is an experimental library and tool to modify SMT files.
 
+* [smt2model](smt2model) is an experimental tool to transform SMT2 files into suitable
+  formats for "language modeling" with machine learning.
+
 The code in this repository is still under active development.
 
 ## Contributing
